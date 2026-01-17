@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTC 长期指标仪表盘</title>
+    <meta name="description" content="实时监控比特币长期指标，包括 Pi Cycle Top、减半周期、Ahr999、幂律走廊等核心指标">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Favicon -->
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>₿ BTC 长期指标仪表盘</h1>
+            <p class="subtitle">基于 P0/P1 核心指标的市场监控系统</p>
+            <p class="timestamp" id="timestamp">加载中...</p>
+        </header>
+
+        <!-- Loading State -->
+        <div id="loading" class="loading">
+            <div class="loading-spinner"></div>
+            <p class="loading-text">正在获取 BTC 数据...</p>
+        </div>
+
+        <!-- Main Content (hidden until data loads) -->
+        <main id="mainContent" style="display: none;">
+            <!-- Price Section -->
+            <section class="price-section">
+                <div class="btc-price" id="btcPrice">--</div>
+                <p class="btc-label">Bitcoin 当前价格</p>
+            </section>
+
+            <!-- 价格走势图 (New in V4.0) -->
+            <div class="chart-section"
+                style="margin: 20px 0; background: var(--card-bg); border-radius: 12px; padding: 15px; border: 1px solid var(--border-color);">
+                <div class="section-title" style="margin-bottom: 10px;">比特币价格走势 (BTC/USDT)</div>
+                <!-- TradingView Widget BEGIN -->
+                <div class="tradingview-widget-container" style="height: 500px; width: 100%;">
+                    <div id="tradingview_b1e2c" style="height: 100%; width: 100%;"></div>
+                    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+                    <script type="text/javascript">
+                        new TradingView.widget(
+                            {
+                                "autosize": true,
+                                "symbol": "BINANCE:BTCUSDT",
+                                "interval": "D",
+                                "timezone": "Etc/UTC",
+                                "theme": "dark",
+                                "style": "1",
+                                "locale": "zh_CN",
+                                "enable_publishing": false,
+                                "allow_symbol_change": true,
+                                "container_id": "tradingview_b1e2c"
+                            }
+                        );
+                    </script>
+                </div>
+                <!-- TradingView Widget END -->
+            </div>
+
+            <!-- Score Gauge + Summary Table -->
+            <section class="gauge-section">
+                <div class="score-summary-container">
+                    <!-- Left: Gauge -->
+                    <div class="gauge-container">
+                        <h2 class="gauge-title">综合评分</h2>
+                        <div class="gauge">
+                            <div class="gauge-bg"></div>
+                            <div class="gauge-needle" id="gaugeNeedle"></div>
+                            <div class="gauge-center"></div>
+                        </div>
+                        <div class="gauge-labels">
+                            <span>-1 (卖出)</span>
+                            <span>0</span>
+                            <span>+1 (买入)</span>
+                        </div>
+                        <div class="score-value" id="scoreValue">--</div>
+                        <div class="recommendation yellow" id="recommendation">加载中...</div>
+                    </div>
+
+                    <!-- Right: Summary Table -->
+                    <div class="summary-table-container">
+                        <h2 class="table-title">指标总览</h2>
+                        <table class="summary-table" id="summaryTable">
+                            <thead>
+                                <tr>
+                                    <th>指标</th>
+                                    <th>数值</th>
+                                    <th>结论</th>
+                                </tr>
+                            </thead>
+                            <tbody id="summaryTableBody">
+                                <!-- Dynamically populated -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- P0 Indicators -->
+            <section class="indicators-section">
+                <h2 class="section-title">
+                    <span class="icon">🔴</span>
+                    P0 核心指标
+                </h2>
+                <div class="indicators-grid" id="p0Indicators">
+                    <!-- Dynamically populated -->
+                </div>
+            </section>
+
+            <!-- P1 Indicators -->
+            <div class="priority-section">
+                <div class="section-title">P1 重要参考 (Important)</div>
+                <div class="cards-container" id="p1Indicators">
+                    <!-- 由 JS 动态填充 -->
+                </div>
+            </div>
+
+
+
+            <!-- P2 Indicators -->
+            <div class="priority-section">
+                <div class="section-title">P2 辅助观察 (Optional)</div>
+                <div class="cards-container" id="p2Indicators">
+                    <!-- 由 JS 动态填充 -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Refresh Button -->
+    <button class="refresh-btn" id="refreshBtn" title="刷新数据">🔄</button>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+
+</html>
