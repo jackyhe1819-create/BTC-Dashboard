@@ -60,9 +60,14 @@ function renderDashboard(data) {
     // 更新时间戳
     document.getElementById('timestamp').textContent = `更新时间: ${data.timestamp}`;
 
-    // 更新价格
-    document.getElementById('btcPrice').innerHTML =
-        `<span class="currency">$</span>${formatNumber(data.btc_price)}`;
+    // 更新价格 (safely check if element exists)
+    const btcPriceEl = document.getElementById('btcPrice');
+    if (btcPriceEl) {
+        btcPriceEl.innerHTML = `<span class="currency">$</span>${formatNumber(data.btc_price)}`;
+    }
+
+    // 更新顶部摘要栏
+    updateTopSummaryBar(data.btc_price, data.indicators);
 
     // 更新仪表盘指针
     updateGauge(data.total_score);
@@ -80,6 +85,89 @@ function renderDashboard(data) {
 
     // 渲染指标总览表格
     renderSummaryTable(data.indicators);
+}
+
+/**
+ * 更新顶部摘要栏
+ */
+function updateTopSummaryBar(btcPrice, indicators) {
+    // 价格
+    const priceEl = document.getElementById('summaryPrice');
+    if (priceEl) {
+        priceEl.textContent = '$' + btcPrice.toLocaleString(undefined, {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        });
+    }
+
+    // 价格趋势
+    const changeEl = document.getElementById('summaryChange');
+    if (changeEl && indicators['MACD']) {
+        const macd = indicators['MACD'];
+        if (macd.score > 0) {
+            changeEl.textContent = '▲ 趋势向上';
+            changeEl.className = 'change positive';
+        } else if (macd.score < 0) {
+            changeEl.textContent = '▼ 趋势向下';
+            changeEl.className = 'change negative';
+        } else {
+            changeEl.textContent = '— 震荡';
+            changeEl.className = 'change neutral';
+        }
+    }
+
+    // 全网算力
+    const hashrateEl = document.getElementById('summaryHashrate');
+    if (hashrateEl && indicators['全网算力']) {
+        const val = indicators['全网算力'].value;
+        if (!isNaN(val)) {
+            hashrateEl.textContent = val.toFixed(1) + ' EH/s';
+        }
+    }
+
+    // Ahr999
+    const ahr999El = document.getElementById('summaryAhr999');
+    if (ahr999El && indicators['Ahr999']) {
+        const val = indicators['Ahr999'].value;
+        if (!isNaN(val)) {
+            ahr999El.textContent = val.toFixed(2);
+            ahr999El.style.color = val < 0.45 ? '#00ff88' : (val < 1.2 ? '#ffcc00' : '#ff4466');
+        }
+    }
+
+    // 恐惧贪婪
+    const fgEl = document.getElementById('summaryFearGreed');
+    if (fgEl && indicators['恐惧贪婪指数']) {
+        const val = indicators['恐惧贪婪指数'].value;
+        if (!isNaN(val)) {
+            fgEl.textContent = val.toFixed(0);
+            fgEl.style.color = val < 25 ? '#00ff88' : (val > 75 ? '#ff4466' : '#ffcc00');
+        }
+    }
+
+    // 减半倒计时
+    const halvingEl = document.getElementById('summaryHalving');
+    if (halvingEl && indicators['减半周期']) {
+        const status = indicators['减半周期'].status;
+        const match = status.match(/(\d+)\s*天/);
+        if (match) {
+            halvingEl.textContent = match[1] + '天';
+        } else {
+            halvingEl.textContent = Math.round(indicators['减半周期'].value) + '月';
+        }
+    }
+
+    // 均衡价格
+    const balancedEl = document.getElementById('summaryBalanced');
+    if (balancedEl && indicators['均衡价格']) {
+        const val = indicators['均衡价格'].value;
+        if (!isNaN(val)) {
+            balancedEl.textContent = '$' + val.toLocaleString(undefined, {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            });
+        }
+    }
 }
 
 /**
@@ -198,23 +286,23 @@ function updateGauge(score) {
  * 渲染指标卡片
  */
 function renderIndicators(indicators) {
-    const p0Container = document.getElementById('p0Indicators');
-    const p1Container = document.getElementById('p1Indicators');
-    const p2Container = document.getElementById('p2Indicators');
+    const longTermContainer = document.getElementById('longTermIndicators');
+    const shortTermContainer = document.getElementById('shortTermIndicators');
+    const auxContainer = document.getElementById('auxIndicators');
 
-    p0Container.innerHTML = '';
-    p1Container.innerHTML = '';
-    if (p2Container) p2Container.innerHTML = '';
+    if (longTermContainer) longTermContainer.innerHTML = '';
+    if (shortTermContainer) shortTermContainer.innerHTML = '';
+    if (auxContainer) auxContainer.innerHTML = '';
 
     for (const [name, indicator] of Object.entries(indicators)) {
         const card = createIndicatorCard(indicator);
 
         if (indicator.priority === 'P0') {
-            p0Container.appendChild(card);
+            if (longTermContainer) longTermContainer.appendChild(card);
         } else if (indicator.priority === 'P1') {
-            p1Container.appendChild(card);
-        } else if (p2Container) {
-            p2Container.appendChild(card);
+            if (shortTermContainer) shortTermContainer.appendChild(card);
+        } else if (auxContainer) {
+            auxContainer.appendChild(card);
         }
     }
 }
@@ -233,7 +321,8 @@ function createIndicatorCard(indicator) {
     const chartableIndicators = ['Ahr999', '恐惧贪婪指数', '资金费率', '多空比', 'Pi Cycle Top'];
     const hasChart = chartableIndicators.includes(indicator.name);
 
-    card.innerHTML = `
+    // 构建HTML
+    let html = `
         <div class="indicator-header">
             <span class="indicator-name">${indicator.name}</span>
             <span class="indicator-priority ${indicator.priority}">${indicator.priority}</span>
@@ -245,15 +334,36 @@ function createIndicatorCard(indicator) {
         ${hasChart ? `<div class="indicator-chart"><canvas id="${chartId}" height="60"></canvas></div>` : ''}
     `;
 
-    // 如果由外部链接，添加点击事件和样式
-    if (indicator.url) {
-        card.classList.add('clickable');
-        card.onclick = () => window.open(indicator.url, '_blank');
+    // 添加说明部分的容器 (如果有定义)
+    if (indicator.description || indicator.method) {
+        html += `
+            <div class="indicator-details-toggle" onclick="toggleDetails(this)">
+                <span>ℹ️ 指标说明</span>
+                <span class="arrow">▼</span>
+            </div>
+            <div class="indicator-details" style="display: none;">
+                ${indicator.description ? `<div class="detail-item"><strong>定义:</strong> ${indicator.description}</div>` : ''}
+                ${indicator.method ? `<div class="detail-item"><strong>计算:</strong> ${indicator.method}</div>` : ''}
+            </div>
+        `;
+    }
 
-        // 在状态中添加外部链接图标
-        const statusEl = card.querySelector('.indicator-status span:last-child');
-        if (statusEl) {
-            statusEl.innerHTML += ' <span style="font-size: 0.8em;">↗</span>';
+    card.innerHTML = html;
+
+    // 如果由外部链接，添加点击事件和样式 (点击卡片头部跳转)
+    if (indicator.url) {
+        const header = card.querySelector('.indicator-header');
+        header.classList.add('clickable');
+        header.onclick = (e) => {
+            e.stopPropagation();
+            window.open(indicator.url, '_blank');
+        };
+        header.title = "点击查看原始图表";
+
+        // 在名字旁添加链接图标
+        const nameEl = card.querySelector('.indicator-name');
+        if (nameEl) {
+            nameEl.innerHTML += ' <span style="font-size: 0.8em; color: #888;">↗</span>';
         }
     }
 
@@ -371,6 +481,24 @@ function renderMiniChart(canvasId, data) {
 }
 
 /**
+ * 切换指标说明显示/隐藏
+ */
+function toggleDetails(element) {
+    const details = element.nextElementSibling;
+    const arrow = element.querySelector('.arrow');
+
+    if (details.style.display === 'none') {
+        details.style.display = 'block';
+        arrow.textContent = '▲';
+        element.classList.add('active');
+    } else {
+        details.style.display = 'none';
+        arrow.textContent = '▼';
+        element.classList.remove('active');
+    }
+}
+
+/**
  * 绘制阈值参考线
  */
 function drawThresholdLines(canvas, ctx, data) {
@@ -451,3 +579,224 @@ function showError(message) {
     `;
 }
 
+/**
+ * 获取资讯数据
+ */
+async function fetchNewsData() {
+    console.log('Fetching news data...');
+    try {
+        const response = await fetch('/api/news');
+        const data = await response.json();
+
+        if (data.success) {
+            // 渲染资讯
+            if (data.news && data.news.length > 0) {
+                renderCryptoNews(data.news);
+            }
+            // 渲染鲸鱼动态
+            if (data.whales && data.whales.length > 0) {
+                renderWhaleActivity(data.whales);
+            }
+            // 渲染宏观经济日历
+            if (data.calendar && data.calendar.length > 0) {
+                renderMacroCalendar(data.calendar);
+            }
+            console.log('News data loaded successfully');
+        } else {
+            console.error('News API error:', data.error);
+        }
+    } catch (error) {
+        console.error('Failed to fetch news:', error);
+    }
+}
+
+/**
+ * 渲染 BTC 资讯
+ */
+function renderCryptoNews(news) {
+    const container = document.getElementById('cryptoNews');
+    if (!container) return;
+
+    container.innerHTML = news.map(item => `
+        <div class="news-item" style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+            <a href="${item.url}" target="_blank" style="color: #f79322; text-decoration: none; font-weight: 500;">
+                ${item.icon || '📰'} ${item.title}
+            </a>
+            <div style="margin-top: 6px; font-size: 0.85rem; color: #888;">
+                ${item.summary || ''}
+            </div>
+            <div style="margin-top: 4px; font-size: 0.75rem; color: #666;">
+                ${item.source} · ${item.time}
+            </div>
+        </div>
+    `).join('');
+}
+
+/**
+ * 渲染鲸鱼动态
+ */
+function renderWhaleActivity(whales) {
+    const container = document.getElementById('whaleActivity');
+    if (!container) return;
+
+    container.innerHTML = whales.map(item => {
+        // 特殊处理 "链接" 类型
+        if (item.type === '链接') {
+            return `
+            <a href="${item.url}" target="_blank" class="whale-item" style="display: block; text-decoration: none; margin-bottom: 8px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px; font-size: 0.9rem; text-align: center; color: #f79322; font-weight: 500;">
+                ${item.icon || '🔗'} ${item.amount || '查看更多'}
+            </a>
+            `;
+        }
+
+        return `
+        <a href="${item.url}" target="_blank" class="whale-item" style="display: block; text-decoration: none; margin-bottom: 8px; padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.9rem; transition: background 0.2s;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: ${item.type.includes('流入') || item.type.includes('巨鲸') ? '#00ff88' : '#ff4466'}; display: flex; align-items: center; gap: 4px;">
+                    ${item.icon || ''} ${item.type || '交易'}
+                </span>
+                <span style="color: #fff; font-weight: 500;">
+                    ${item.amount}
+                </span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                <span style="color: #666; font-size: 0.75rem;">
+                    ${item.time}
+                </span>
+                <span style="color: #888; font-size: 0.8rem;">
+                    ≈ ${item.value_usd}
+                </span>
+            </div>
+        </a>
+    `}).join('');
+}
+
+
+/**
+ * 渲染宏观经济日历
+ */
+function renderMacroCalendar(events) {
+    const container = document.getElementById('macroCalendar');
+    if (!container) return;
+
+    // 影响程度颜色映射
+    const impactColor = {
+        '高': '#ff4466',
+        '中': '#f79322',
+        '低': '#888'
+    };
+
+    container.innerHTML = events.map(item => {
+        // 特殊处理 "链接" 类型
+        if (item.type === '链接') {
+            return `
+            <a href="${item.url}" target="_blank" class="calendar-item" style="display: block; text-decoration: none; margin-bottom: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px; text-align: center; color: #f79322;">
+                ${item.event}
+            </a>
+            `;
+        }
+
+        const impact = item.impact || '';
+        const color = impactColor[impact] || '#888';
+        const hasActual = item.has_actual;
+        const isPast = item.is_past;
+        const eventStatus = item.event_status || '';
+        const actual = item.actual || '';
+        const forecast = item.forecast || '';
+        const previous = item.previous || '';
+
+        // 状态徽章样式
+        let statusBadge = '';
+        if (eventStatus === '已公布') {
+            statusBadge = `<span style="font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; background: ${hasActual ? '#00c85322' : '#8884'}; color: ${hasActual ? '#00c853' : '#aaa'}; white-space: nowrap; margin-left: 6px; border: 1px solid ${hasActual ? '#00c85344' : '#8882'};">✓ 已公布</span>`;
+        } else if (eventStatus === '待公布') {
+            statusBadge = `<span style="font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; background: #f7932211; color: #f79322; white-space: nowrap; margin-left: 6px; border: 1px solid #f7932233;">⏳ 待公布</span>`;
+        }
+
+        // 构建数据值行
+        let dataRows = '';
+        if (hasActual && actual) {
+            // 有实际公布值 - 醒目显示
+            dataRows += `<div style="margin-top: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">`;
+            dataRows += `<span style="font-size: 0.82rem; color: #00e676; font-weight: 600; background: #00e67615; padding: 1px 6px; border-radius: 4px;">📌 公布: ${actual}</span>`;
+            if (forecast) {
+                dataRows += `<span style="font-size: 0.75rem; color: #aaa;">预期: ${forecast}</span>`;
+            }
+            if (previous) {
+                dataRows += `<span style="font-size: 0.75rem; color: #888;">前值: ${previous}</span>`;
+            }
+            dataRows += `</div>`;
+        } else if (isPast) {
+            // 已过去但没有actual - 显示预期和前值
+            dataRows += `<div style="margin-top: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">`;
+            if (forecast) {
+                dataRows += `<span style="font-size: 0.75rem; color: #ccc;">预期: ${forecast}</span>`;
+            }
+            if (previous) {
+                dataRows += `<span style="font-size: 0.75rem; color: #888;">前值: ${previous}</span>`;
+            }
+            dataRows += `</div>`;
+        } else {
+            // 未来事件 - 显示预期和前值
+            dataRows += `<div style="margin-top: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">`;
+            if (forecast) {
+                dataRows += `<span style="font-size: 0.75rem; color: #ccc;">预期: ${forecast}</span>`;
+            }
+            if (previous) {
+                dataRows += `<span style="font-size: 0.75rem; color: #888;">前值: ${previous}</span>`;
+            }
+            dataRows += `</div>`;
+        }
+
+        // 整体透明度：已公布事件稍暗
+        const opacity = isPast && !hasActual ? '0.75' : '1';
+
+        return `
+        <div class="calendar-item" style="margin-bottom: 8px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px; border-left: 3px solid ${color}; opacity: ${opacity};">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div style="color: #e0e0e0; font-weight: 500; font-size: 0.9rem; flex: 1; display: flex; align-items: center; flex-wrap: wrap;">
+                    ${item.event || item.title || '未知事件'}
+                    ${statusBadge}
+                </div>
+                <span style="font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: ${color}22; color: ${color}; white-space: nowrap; margin-left: 8px;">
+                    ${impact}
+                </span>
+            </div>
+            <div style="margin-top: 4px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.8rem; color: #888;">
+                    📆 ${item.date || ''}
+                </span>
+            </div>
+            ${dataRows}
+        </div>
+    `}).join('');
+}
+
+/**
+ * 渲染加密日历
+ */
+function renderCryptoCalendar(events) {
+    const container = document.getElementById('cryptoCalendar');
+    if (!container) return;
+
+    container.innerHTML = events.map(item => `
+        <div class="calendar-item" style="margin-bottom: 10px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+            <div style="color: #f79322; font-weight: 500;">
+                ${item.icon || '📅'} ${item.event || item.title || '未知事件'}
+                ${item.source ? `<span style="font-size: 0.7rem; color: #666; margin-left: 8px;">[${item.source}]</span>` : ''}
+            </div>
+            <div style="margin-top: 4px; font-size: 0.85rem; color: #aaa;">
+                ${item.status || item.description || ''}
+            </div>
+            <div style="margin-top: 4px; font-size: 0.75rem; color: #666;">
+                ${item.date || ''} ${item.type ? '· ' + item.type : ''} ${item.impact ? '· 影响: ' + item.impact : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+// 页面加载后获取资讯数据
+document.addEventListener('DOMContentLoaded', function () {
+    // 延迟获取资讯，优先加载主要指标
+    setTimeout(fetchNewsData, 3000);
+});

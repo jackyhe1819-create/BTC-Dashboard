@@ -95,31 +95,132 @@ body::before {
     font-family: var(--font-mono);
 }
 
-/* Price Display */
-.price-section {
-    text-align: center;
-    margin-bottom: 40px;
+/* Top Summary Bar */
+.top-summary-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    padding: 15px 20px;
+    background: rgba(25, 25, 35, 0.9);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    margin-bottom: 25px;
+    justify-content: space-between;
 }
 
-.btc-price {
-    font-size: 4rem;
-    font-weight: 800;
+.top-summary-bar .summary-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 100px;
+    padding: 8px 15px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    transition: all 0.2s ease;
+}
+
+.top-summary-bar .summary-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.top-summary-bar .summary-item.primary {
+    background: rgba(247, 147, 26, 0.1);
+    border: 1px solid rgba(247, 147, 26, 0.3);
+    min-width: 150px;
+}
+
+.top-summary-bar .summary-item .label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.top-summary-bar .summary-item .value {
+    font-size: 1.3rem;
+    font-weight: 700;
     color: var(--text-primary);
-    letter-spacing: -2px;
-    text-shadow: 0 0 40px rgba(247, 147, 26, 0.4);
+    font-family: var(--font-mono);
 }
 
-.btc-price .currency {
-    font-size: 2rem;
-    color: var(--text-secondary);
-    font-weight: 400;
+.top-summary-bar .summary-item.primary .value {
+    font-size: 1.6rem;
+    background: var(--gradient-gold);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
-.btc-label {
-    color: var(--text-secondary);
-    font-size: 1rem;
-    margin-top: 5px;
+.top-summary-bar .summary-item .change {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-top: 2px;
 }
+
+.top-summary-bar .summary-item .change.positive {
+    color: var(--accent-green);
+}
+
+.top-summary-bar .summary-item .change.negative {
+    color: var(--accent-red);
+}
+
+.top-summary-bar .summary-item .change.neutral {
+    color: var(--text-muted);
+}
+
+/* Responsive Summary Bar */
+@media (max-width: 900px) {
+    .top-summary-bar {
+        justify-content: center;
+    }
+
+    .top-summary-bar .summary-item {
+        min-width: 80px;
+        padding: 6px 10px;
+    }
+
+    .top-summary-bar .summary-item .value {
+        font-size: 1.1rem;
+    }
+}
+
+/* Status Labels for Indicator Cards */
+.status-label {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-top: 10px;
+}
+
+.status-label.buy {
+    background: rgba(0, 255, 136, 0.15);
+    color: var(--accent-green);
+    border: 1px solid rgba(0, 255, 136, 0.3);
+}
+
+.status-label.hold {
+    background: rgba(255, 204, 0, 0.15);
+    color: var(--accent-yellow);
+    border: 1px solid rgba(255, 204, 0, 0.3);
+}
+
+.status-label.sell {
+    background: rgba(255, 68, 102, 0.15);
+    color: var(--accent-red);
+    border: 1px solid rgba(255, 68, 102, 0.3);
+}
+
+.status-label.info {
+    background: rgba(68, 136, 255, 0.15);
+    color: var(--accent-blue);
+    border: 1px solid rgba(68, 136, 255, 0.3);
+}
+
 
 /* Score Gauge Section */
 .gauge-section {
@@ -374,7 +475,7 @@ body::before {
     padding: 24px;
     transition: all 0.3s ease;
     position: relative;
-    overflow: hidden;
+    /* overflow: hidden; - Removed to allow popover */
 }
 
 .indicator-card.clickable {
@@ -584,4 +685,199 @@ body::before {
     .indicators-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* ============================================================
+   Card Details Popover Styles (Global Tooltip)
+   ============================================================ */
+
+.indicator-card {
+    position: relative;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+    z-index: 1;
+    /* Base z-index */
+}
+
+/* Popover container */
+.card-details-popover {
+    /* Style shared with global toolip */
+    width: 280px;
+    background: rgba(15, 15, 20, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+    display: none;
+    /* Controlled by JS */
+}
+
+/* Arrow indicator (Triangle) */
+.card-details-popover::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    left: -6px;
+    width: 0;
+    height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-right: 6px solid rgba(15, 15, 20, 0.95);
+    /* Matches background */
+}
+
+/* Arrow for Left position */
+.card-details-popover.pop-left::before {
+    left: auto;
+    right: -6px;
+    border-right: none;
+    border-left: 6px solid rgba(15, 15, 20, 0.95);
+}
+
+.details-content-small {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    overflow-y: auto;
+    /* Allow scroll if content is too long */
+    height: 100%;
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent-blue) transparent;
+}
+
+.details-content-small::-webkit-scrollbar {
+    width: 4px;
+}
+
+.details-content-small::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.details-content-small::-webkit-scrollbar-thumb {
+    background-color: var(--accent-blue);
+    border-radius: 20px;
+}
+
+.details-section-title {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    margin-top: 12px;
+    font-weight: 700;
+}
+
+.details-section-title:first-child {
+    margin-top: 0;
+}
+
+.details-text {
+    margin-bottom: 8px;
+}
+
+.details-formula {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 8px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    border-left: 2px solid var(--accent-green);
+    margin-bottom: 8px;
+}
+
+/* Remove interactive row styles from table as we moved to cards */
+.interactive-row {
+    cursor: default;
+}
+
+.interactive-row:hover {
+    background: transparent;
+}
+
+.interactive-row.active {
+    background: transparent;
+    border: none;
+}
+
+/* 指标说明折叠样式 */
+.indicator-details-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    margin-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    color: #888;
+    font-size: 0.85rem;
+    transition: color 0.2s;
+    user-select: none;
+}
+
+.indicator-details-toggle:hover {
+    color: var(--text-color);
+}
+
+.indicator-details-toggle .arrow {
+    font-size: 0.7rem;
+    transition: transform 0.2s;
+}
+
+.indicator-details {
+    margin-top: 5px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #ccc;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.detail-item {
+    margin-bottom: 8px;
+}
+
+.detail-item:last-child {
+    margin-bottom: 0;
+}
+
+.detail-item strong {
+    color: var(--primary-color);
+    font-weight: 500;
+}
+
+/* 调整卡片头部点击样式 */
+.indicator-header.clickable {
+    cursor: pointer;
+}
+
+.indicator-header.clickable:hover .indicator-name {
+    color: var(--primary-color);
+    text-decoration: underline;
+}
+
+/* News list scrollbar styles */
+.news-list {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(247, 147, 26, 0.4) transparent;
+}
+
+.news-list::-webkit-scrollbar {
+    width: 5px;
+}
+
+.news-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.news-list::-webkit-scrollbar-thumb {
+    background-color: rgba(247, 147, 26, 0.4);
+    border-radius: 10px;
+}
+
+.news-list::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(247, 147, 26, 0.7);
 }

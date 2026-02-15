@@ -17,7 +17,11 @@ from datetime import datetime
 import numpy as np
 
 # 导入 dashboard 运行函数和历史数据函数
-from btc_dashboard import run_dashboard, get_indicator_history, fetch_btc_data
+from btc_dashboard import (
+    run_dashboard, get_indicator_history, fetch_btc_data,
+    fetch_crypto_news, fetch_whale_activity, fetch_macro_calendar,
+    fetch_crypto_calendar
+)
 
 app = Flask(__name__)
 
@@ -60,7 +64,9 @@ def api_dashboard():
                 "color": ind.color,
                 "status": ind.status,
                 "priority": ind.priority,
-                "url": ind.url
+                "url": ind.url,
+                "description": ind.description,
+                "method": ind.method
             }
         
         return jsonify({
@@ -94,6 +100,29 @@ def api_history(indicator_name: str):
         return jsonify({
             "success": True,
             **history
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/news')
+def api_news():
+    """API 端点：返回资讯信息"""
+    try:
+        news = fetch_crypto_news(limit=20)
+        whales = fetch_whale_activity(min_btc=10, limit=50)
+        calendar = fetch_macro_calendar()
+        crypto_calendar = fetch_crypto_calendar()
+        
+        return jsonify({
+            "success": True,
+            "news": news,
+            "whales": whales,
+            "calendar": calendar,
+            "crypto_calendar": crypto_calendar
         })
         
     except Exception as e:
