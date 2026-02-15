@@ -132,8 +132,11 @@ def api_news():
 
 
 if __name__ == '__main__':
-    print("🚀 启动 BTC Dashboard Web 服务器...")
-    print("📊 访问 http://localhost:5050 查看仪表盘")
-    #使用 use_reloader=False 避免在后台运行时产生双进程问题
-    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=5050)
+    import os
+    port = int(os.environ.get('PORT', 5050))
+    debug = os.environ.get('FLASK_ENV') != 'production'
+    print(f"🚀 启动 BTC Dashboard Web 服务器 (port={port})...")
+    print(f"📊 访问 http://localhost:{port} 查看仪表盘")
+    app.run(debug=debug, use_reloader=False, host='0.0.0.0', port=port)
+
 

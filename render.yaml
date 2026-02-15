@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: btc-dashboard
+    runtime: python
+    rootDir: .
+    buildCommand: pip install -r btc_web/requirements.txt
+    startCommand: cd btc_web && gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+    plan: free
