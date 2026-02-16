@@ -18,7 +18,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Tuple, Dict, Optional
 import warnings
@@ -2292,15 +2292,36 @@ def fetch_macro_calendar() -> list:
         'Holiday': '假日'
     }
     
+    # 模块级缓存 (避免频繁请求导致429限流)
+    global _macro_calendar_cache, _macro_calendar_cache_time
+    
+    now = datetime.now()
+    if '_macro_calendar_cache' in dir(fetch_macro_calendar) and fetch_macro_calendar._cache_time:
+        cache_age = (now - fetch_macro_calendar._cache_time).total_seconds()
+        if cache_age < 1800 and fetch_macro_calendar._cache:  # 30分钟缓存
+            return fetch_macro_calendar._cache
+    
     try:
-        # 获取本周经济日历
-        response = requests.get(
-            "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-            timeout=15,
-            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
-        )
+        # 获取本周经济日历 (带重试)
+        import time as _time
+        response = None
+        for attempt in range(3):
+            response = requests.get(
+                "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+                timeout=15,
+                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+            )
+            if response.status_code == 200:
+                break
+            elif response.status_code == 429:
+                wait_secs = 5 * (attempt + 1)
+                print(f"⚠️ 经济日历 API 限流 (429)，{wait_secs}秒后重试...")
+                _time.sleep(wait_secs)
+            else:
+                print(f"⚠️ 经济日历 API 返回 {response.status_code}")
+                break
         
-        if response.status_code == 200:
+        if response is not None and response.status_code == 200:
             events = response.json()
             
             for event in events:
@@ -2341,9 +2362,7 @@ def fetch_macro_calendar() -> list:
                 
                 # 解析时间 (转换为北京时间 UTC+8)
                 try:
-                    from datetime import datetime, timedelta, timezone
                     event_time = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                    # 转换为北京时间 (UTC+8)
                     beijing_tz = timezone(timedelta(hours=8))
                     event_time_beijing = event_time.astimezone(beijing_tz)
                     display_date = event_time_beijing.strftime("%m-%d %H:%M")
@@ -2363,14 +2382,12 @@ def fetch_macro_calendar() -> list:
                 # 构建数据结果字符串
                 data_result = ""
                 if actual:
-                    # 有实际公布值
                     data_result = f"公布: {actual}"
                     if forecast:
                         data_result += f" · 预期: {forecast}"
                     if previous:
                         data_result += f" · 前值: {previous}"
                 elif is_past:
-                    # 已过去但API没有actual值
                     parts = []
                     if forecast:
                         parts.append(f"预期: {forecast}")
@@ -2378,7 +2395,6 @@ def fetch_macro_calendar() -> list:
                         parts.append(f"前值: {previous}")
                     data_result = " · ".join(parts) if parts else ""
                 else:
-                    # 未来事件
                     parts = []
                     if forecast:
                         parts.append(f"预期: {forecast}")
@@ -2411,7 +2427,7 @@ def fetch_macro_calendar() -> list:
             # 按时间排序
             calendar.sort(key=lambda x: x.get('date', ''))
             
-            # 限制返回数量（扩大到15个以填充更多空间）
+            # 限制返回数量
             calendar = calendar[:15]
                     
     except Exception as e:
