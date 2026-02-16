@@ -859,6 +859,56 @@ body::before {
     text-decoration: underline;
 }
 
+/* ============================================================
+   News Layout Base Styles (moved from inline)
+   ============================================================ */
+.tradingview-widget-container {
+    height: 500px;
+}
+
+.news-layout {
+    display: flex;
+    gap: 20px;
+    margin-top: 15px;
+    flex-wrap: wrap;
+}
+
+.news-col-left {
+    flex: 1;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    height: 780px;
+}
+
+.news-col-right {
+    flex: 2;
+    min-width: 300px;
+}
+
+.news-card {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+}
+
+.calendar-card {
+    height: 380px;
+}
+
+.whale-card {
+    flex: 1;
+    min-height: 0;
+}
+
+.news-main-card {
+    height: 780px;
+}
+
 /* News list scrollbar styles */
 .news-list {
     scrollbar-width: thin;
@@ -880,4 +930,352 @@ body::before {
 
 .news-list::-webkit-scrollbar-thumb:hover {
     background-color: rgba(247, 147, 26, 0.7);
+}
+
+/* Short-term & Aux indicator grids */
+.cards-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    margin-bottom: 40px;
+}
+
+/* ============================================================
+   Mobile Responsive Styles
+   ============================================================ */
+
+/* Tablet breakpoint */
+@media (max-width: 900px) {
+    .container {
+        padding: 15px 12px;
+    }
+
+    .header h1 {
+        font-size: 1.6rem;
+    }
+
+    .header .subtitle {
+        font-size: 0.85rem;
+    }
+
+    /* Summary bar: 2-column grid */
+    .top-summary-bar {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        padding: 12px;
+    }
+
+    .top-summary-bar .summary-item {
+        min-width: unset;
+        padding: 8px 6px;
+    }
+
+    .top-summary-bar .summary-item.primary {
+        grid-column: span 1;
+        min-width: unset;
+    }
+
+    .top-summary-bar .summary-item .value {
+        font-size: 1rem;
+    }
+
+    .top-summary-bar .summary-item.primary .value {
+        font-size: 1.2rem;
+    }
+
+    /* TradingView chart shorter */
+    .tradingview-widget-container {
+        height: 350px;
+    }
+
+    /* Score section */
+    .score-summary-container {
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .gauge-container {
+        padding: 25px 20px;
+        width: 100%;
+    }
+
+    .summary-table-container {
+        min-width: unset;
+        max-width: unset;
+        width: 100%;
+    }
+
+    /* News: stack vertically on tablet */
+    .news-col-left {
+        height: auto;
+    }
+
+    .calendar-card {
+        height: 350px;
+    }
+
+    .whale-card {
+        height: 350px;
+        flex: unset;
+    }
+
+    .news-main-card {
+        height: 500px;
+    }
+
+    /* Indicator cards grid */
+    .indicators-grid,
+    .cards-container {
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+}
+
+/* Phone breakpoint */
+@media (max-width: 480px) {
+    .container {
+        padding: 10px 8px;
+    }
+
+    .header {
+        margin-bottom: 20px;
+    }
+
+    .header h1 {
+        font-size: 1.3rem;
+    }
+
+    .header .subtitle {
+        font-size: 0.8rem;
+    }
+
+    .timestamp {
+        font-size: 0.75rem;
+    }
+
+    /* Summary bar: 2-col grid on phone */
+    .top-summary-bar {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        padding: 10px;
+        border-radius: 12px;
+    }
+
+    .top-summary-bar .summary-item {
+        padding: 6px 4px;
+        border-radius: 8px;
+    }
+
+    .top-summary-bar .summary-item .label {
+        font-size: 0.65rem;
+    }
+
+    .top-summary-bar .summary-item .value {
+        font-size: 0.9rem;
+    }
+
+    .top-summary-bar .summary-item.primary .value {
+        font-size: 1.1rem;
+    }
+
+    /* TradingView chart */
+    .tradingview-widget-container {
+        height: 280px;
+    }
+
+    .chart-section {
+        padding: 10px !important;
+        border-radius: 10px !important;
+    }
+
+    .chart-section .section-title {
+        font-size: 0.9rem !important;
+    }
+
+    /* Gauge */
+    .gauge-section {
+        margin-bottom: 30px;
+    }
+
+    .gauge-container {
+        padding: 20px 15px;
+        border-radius: 16px;
+    }
+
+    .gauge {
+        width: 200px;
+        height: 120px;
+    }
+
+    .gauge-bg {
+        width: 200px;
+        height: 100px;
+        border-radius: 100px 100px 0 0;
+    }
+
+    .gauge-bg::after {
+        width: 140px;
+        height: 70px;
+        border-radius: 70px 70px 0 0;
+    }
+
+    .gauge-needle {
+        height: 75px;
+    }
+
+    .gauge-title {
+        font-size: 1rem;
+    }
+
+    .score-value {
+        font-size: 2.2rem;
+        margin-top: 15px;
+    }
+
+    .recommendation {
+        font-size: 1.1rem;
+        padding: 8px 18px;
+    }
+
+    /* Summary table */
+    .summary-table-container {
+        padding: 15px;
+        max-height: 300px;
+    }
+
+    .summary-table {
+        font-size: 0.8rem;
+    }
+
+    .summary-table th,
+    .summary-table td {
+        padding: 6px 5px;
+    }
+
+    /* News layout: full stack */
+    .news-layout {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .news-col-left {
+        min-width: unset;
+        height: auto;
+        gap: 15px;
+    }
+
+    .news-col-right {
+        min-width: unset;
+    }
+
+    .news-card {
+        padding: 15px;
+        border-radius: 10px;
+    }
+
+    .news-card h3 {
+        font-size: 1rem !important;
+        margin-bottom: 10px !important;
+    }
+
+    .news-card h3 span {
+        font-size: 0.7rem !important;
+    }
+
+    .calendar-card {
+        height: 320px;
+    }
+
+    .whale-card {
+        height: 300px;
+        flex: unset;
+    }
+
+    .news-main-card {
+        height: 450px;
+    }
+
+    /* Indicator section */
+    .section-title {
+        font-size: 1rem;
+        margin-bottom: 12px;
+    }
+
+    .section-title .icon {
+        font-size: 1.2rem;
+    }
+
+    .indicators-grid,
+    .cards-container {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        margin-bottom: 25px;
+    }
+
+    .indicator-card {
+        padding: 16px;
+        border-radius: 12px;
+    }
+
+    .indicator-name {
+        font-size: 0.95rem;
+    }
+
+    .indicator-status {
+        font-size: 0.85rem;
+    }
+
+    .indicator-chart {
+        height: 55px;
+    }
+
+    .indicator-chart canvas {
+        height: 50px !important;
+    }
+
+    /* Refresh button */
+    .refresh-btn {
+        width: 48px;
+        height: 48px;
+        bottom: 20px;
+        right: 20px;
+        font-size: 1.2rem;
+    }
+
+    /* Loading */
+    .loading {
+        min-height: 50vh;
+    }
+
+    .loading-spinner {
+        width: 45px;
+        height: 45px;
+    }
+
+    .loading-text {
+        font-size: 0.95rem;
+    }
+}
+
+/* Extra small phones */
+@media (max-width: 360px) {
+    .top-summary-bar {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .top-summary-bar .summary-item .value {
+        font-size: 0.8rem;
+    }
+
+    .tradingview-widget-container {
+        height: 220px;
+    }
+}
+
+/* iOS safe area support */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .refresh-btn {
+        bottom: calc(20px + env(safe-area-inset-bottom));
+    }
 }
