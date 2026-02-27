@@ -20,7 +20,7 @@ import numpy as np
 from btc_dashboard import (
     run_dashboard, get_indicator_history, fetch_btc_data,
     fetch_crypto_news, fetch_whale_activity, fetch_macro_calendar,
-    fetch_crypto_calendar
+    fetch_crypto_calendar, fetch_whale_volume_stats, fetch_exchange_balance_display
 )
 
 app = Flask(__name__)
@@ -114,6 +114,8 @@ def api_news():
     try:
         news = fetch_crypto_news(limit=20)
         whales = fetch_whale_activity(min_btc=10, limit=50)
+        whale_stats = fetch_whale_volume_stats()
+        exchange_balance = fetch_exchange_balance_display()
         calendar = fetch_macro_calendar()
         crypto_calendar = fetch_crypto_calendar()
         
@@ -121,6 +123,8 @@ def api_news():
             "success": True,
             "news": news,
             "whales": whales,
+            "whale_stats": whale_stats,
+            "exchange_balance": exchange_balance,
             "calendar": calendar,
             "crypto_calendar": crypto_calendar
         })

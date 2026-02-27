@@ -6,8 +6,8 @@ BTC 长期指标仪表盘
 基于需求文档实现的 P0 + P1 指标监控系统
 
 指标列表:
-- P0: Pi Cycle Top, 减半周期
-- P1: Ahr999, 幂律走廊
+- P0: Pi Cycle Top, 减半周期, Ahr999, 长期持有者(CDD)
+- P1: 幂律走廊
 - (P0 MVRV 需 Glassnode API，暂用占位)
 
 运行要求:
@@ -443,95 +443,91 @@ def calc_pi_cycle(df: pd.DataFrame) -> IndicatorResult:
 
 def calc_lth_supply() -> IndicatorResult:
     """
-    长期持有者行为 (Proxy: Coin Days Destroyed)
-    - 数据源: Blockchain.com
-    - 逻辑: CDD (币天销毁) 低位/下降 => LTH 持有 (吸筹/买入)
-           CDD 高位/上升 => LTH 卖出 (派发/风险)
-    - 算法: 计算 30日移动平均线 (SMA30) 的趋势
+    长期持有者行为 (Proxy: 成交量趋势分析)
+    - 数据源: CoinGecko (免费, 无需API Key)
+    - 逻辑: 成交量低迷/下降 => 长期持有者在吸筹 (Bullish)
+           成交量爆发/上升 => 长期持有者在派发 (Bearish)
+    - 算法: 比较 7日成交量均值 vs 90日成交量均值的比率
     """
     try:
-        # 获取过去180天的数据 (足以计算30日均线和短期趋势，且减少超时概率)
-        # 禁用 SSL 验证以绕过本地 SSL 错误
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        
         response = requests.get(
-            "https://api.blockchain.info/charts/days-destroyed?timespan=180days&format=json&sampled=true",
+            "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=180&interval=daily",
             timeout=15,
-            verify=False
+            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
         )
+        
         if response.status_code == 200:
             data = response.json()
-            values = data.get('values', [])
+            volumes = data.get('total_volumes', [])
             
-            if not values or len(values) < 40:
-                print(f"⚠️ CDD 数据不足: {len(values) if values else 0} 条")
-                return IndicatorResult(name="长期持有者(CDD)", value=float('nan'), score=0, color="⚪", status="数据不足", priority="P1")
-
-            # 转换为 DataFrame 处理
-            df_cdd = pd.DataFrame(values)
-            df_cdd['y'] = pd.to_numeric(df_cdd['y'])
+            if not volumes or len(volumes) < 100:
+                print(f"⚠️ Volume 数据不足: {len(volumes) if volumes else 0} 条")
+                return IndicatorResult(name="长期持有者(CDD)", value=float('nan'), score=0, color="⚪", status="数据不足", priority="P0")
             
-            # 计算 30日均线
-            df_cdd['sma30'] = df_cdd['y'].rolling(window=30).mean()
+            # 提取成交量数据
+            vol_values = [v[1] for v in volumes]
+            df_vol = pd.DataFrame({'volume': vol_values})
             
-            # 获取当前和30天前的 SMA30
-            current_sma30 = df_cdd['sma30'].iloc[-1]
-            prev_sma30 = df_cdd['sma30'].iloc[-30]
+            # 计算 7日均线 和 90日均线
+            sma7 = df_vol['volume'].rolling(window=7).mean().iloc[-1]
+            sma90 = df_vol['volume'].rolling(window=90).mean().iloc[-1]
             
-            # 计算变化率
-            change_pct = (current_sma30 - prev_sma30) / prev_sma30
+            # 成交量比率: 短期 / 长期
+            vol_ratio = sma7 / sma90
             
-            # 当前值 (百万币天)
-            current_val_million = current_sma30 / 1_000_000
+            # 当前7日均成交量 (亿美元)
+            vol_billion = sma7 / 1e9
             
-            # 信号逻辑 (基于趋势)
-            # 趋势向下或平稳 => 吸筹 (Bullish)
-            # 趋势向上 => 派发 (Bearish)
+            # 信号逻辑:
+            # 低成交量 (ratio < 0.8) => 吸筹期 (Bullish)
+            # 正常成交量 (0.8-1.3) => 平稳期
+            # 高成交量 (ratio > 1.3) => 活跃期 (可能派发)
+            # 极高成交量 (ratio > 2.0) => 派发期 (Bearish)
             
-            if change_pct < -0.05:
-                # 显著下降
+            if vol_ratio < 0.7:
                 score, color = 1, "🟢"
-                status = f"吸筹中 (趋势 ↓{abs(change_pct)*100:.1f}%)"
-            elif change_pct > 0.20:
-                # 显著上升 (派发)
-                score, color = -1, "🔴"
-                status = f"派发中 (趋势 ↑{change_pct*100:.1f}%)"
-            elif change_pct > 0.05:
-                # 小幅上升
-                score, color = -0.5, "🟠"
-                status = f"轻微派发 (趋势 ↑{change_pct*100:.1f}%)"
-            else:
-                # 平稳 (-5% ~ 5%)
+                status = f"深度吸筹 (量比 {vol_ratio:.2f})"
+            elif vol_ratio < 0.9:
                 score, color = 0.5, "🟢"
-                status = f"持币观望 (趋势平稳)"
-                
+                status = f"吸筹中 (量比 {vol_ratio:.2f})"
+            elif vol_ratio > 2.0:
+                score, color = -1, "🔴"
+                status = f"大量派发 (量比 {vol_ratio:.2f})"
+            elif vol_ratio > 1.5:
+                score, color = -0.5, "🟠"
+                status = f"轻微派发 (量比 {vol_ratio:.2f})"
+            else:
+                score, color = 0, "🟡"
+                status = f"持币观望 (量比 {vol_ratio:.2f})"
+            
             return IndicatorResult(
                 name="长期持有者(CDD)",
-                value=current_val_million, # 单位: 百万币天
+                value=round(vol_ratio, 2),
                 score=score,
                 color=color,
-                status=f"{status} | {current_val_million:.1f}MWD",
-                priority="P1",
-                url="https://www.bitcoinmagazinepro.com/charts/long-term-holder-supply/",
-                description="由于 LTH Supply 数据付费，此指标使用 '币天销毁 (CDD)' 作为代理。CDD 反映了长期持有者的卖出行为。",
-                method="基于 Blockchain.com 每日币天销毁数据的 30日均线趋势。趋势下降代表长期持有者在囤币（吸筹），趋势上升代表在卖出（派发）。"
+                status=f"{status} | {vol_billion:.1f}B$/日",
+                priority="P0",
+                url="https://www.coinglass.com/pro/i/bitcoin-cdd",
+                description="使用成交量趋势分析作为长期持有者行为的代理指标。低成交量通常意味着长期持有者在吸筹，高成交量可能意味着派发。",
+                method="计算 BTC 近7日均成交量与90日均成交量的比率。量比 < 0.8 代表吸筹（看多），量比 > 1.5 代表可能派发（看空）。数据来源: CoinGecko。"
             )
+        else:
+            print(f"⚠️ CoinGecko Volume API 返回 {response.status_code}")
             
     except Exception as e:
-        print(f"⚠️ CDD API Failed: {e}")
+        print(f"⚠️ LTH Volume Proxy Failed: {e}")
         
-    # 返回一个中性/待观察的状态，而不是 NaN (导致不显示)
+    # 返回中性状态
     return IndicatorResult(
         name="长期持有者(CDD)",
-        value=0, # 使用 0 代替 NaN
+        value=0,
         score=0,
         color="⚪",
-        status="数据源连接失败 (SSL)",
-        priority="P1",
-        url="https://www.bitcoinmagazinepro.com/charts/long-term-holder-supply/",
-        description="由于 LTH Supply 数据付费，此指标使用 '币天销毁 (CDD)' 作为代理。CDD 反映了长期持有者的卖出行为。",
-        method="因网络或SSL问题无法连接 Blockchain.com API。请检查网络连接。"
+        status="数据源连接失败",
+        priority="P0",
+        url="https://www.coinglass.com/pro/i/bitcoin-cdd",
+        description="使用成交量趋势分析作为长期持有者行为的代理指标。",
+        method="因网络问题无法连接 CoinGecko API。请检查网络连接。"
     )
 
 
@@ -757,7 +753,7 @@ def calc_ahr999(df: pd.DataFrame) -> IndicatorResult:
         score=score,
         color=color,
         status=status,
-        priority="P1",
+        priority="P0",
         url="https://www.coinglass.com/pro/i/ahr999",
         description="Ahr999 指数用于辅助比特币定投和抄底，评估价格是否处于低估区间。",
         method="Ahr999 = (价格/200日定投成本) * (价格/指数增长估值)。< 0.45 抄底，0.45-1.2 定投，> 1.25 起飞。"
@@ -1784,38 +1780,188 @@ def calc_company_holdings() -> IndicatorResult:
 
 def calc_exchange_reserve() -> IndicatorResult:
     """
-    交易所余额 -> 改为 '机构持仓 (ETF+公司)'
-    由于交易所余额 API (CryptoQuant/Glassnode) 此处不可用(需付费/Key)，
-    改为展示 '上市公司持仓' 作为机构聪明钱的代理指标。
+    交易所BTC余额 — 通过 mempool.space 免费API查询已知交易所冷钱包地址
+    - 余额减少 → BTC流出交易所 → 用户在吸筹/自托管 (Bullish)
+    - 余额增加 → BTC流入交易所 → 潜在卖压 (Bearish)
+    - 数据源: mempool.space (完全免费, 无需API Key)
     """
-    # 复用 Company Holdings 数据
-    holdings, status = fetch_company_holdings_data()
+    import time as _time
     
-    # 获取 ETF 数据 (估算)
-    # 简单的估算: 美国现货 ETF 约 80-100 万 BTC (2024数据)
-    # 这里我们只展示公司持仓，或者手动加上 ETF 估算
-    # 为了准确性，仅展示 "公有公司持仓"
+    EXCHANGE_WALLETS = {
+        "Binance": [
+            "34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo",           # Binance cold wallet 1 (~248K BTC)
+            "bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h",    # Binance cold wallet 2 (~21K BTC)
+            "3M219KR5vEneNb47ewrPfWyb5jQ2DjxRP6",           # Binance cold wallet 3 (~171K BTC)
+            "1NDyJtNTjmwk5xPNhjgAMu4HDHigtobu1s",           # Binance 7
+            "39884E3j6KZj82FK4vcCrkUvWYL5MQaS3v",           # Binance 8
+        ],
+        "Bitfinex": [
+            "bc1qgdjqv0av3q56jvd82tkdjpy7gdp9ut8tlqmgrpmv24sq90ecnvqqjwvw97",  # ~130K BTC
+        ],
+        "Kraken": [
+            "bc1qr4dl5wa7kl8yu792dceg9z5knl2gkn220lk7a9",    # ~18K BTC
+            "3AfSMeESFHT2xLqkR1ufoKcxNqNP5bfcaX",           # Kraken cold 2
+        ],
+        "Crypto.com": [
+            "bc1qpy4jwethqenp4r7hqls660wy8287vw0my32lmy",    # 官方公布
+            "bc1q4c8n5t00jmj8temxdgcc3t32nkg2wjwz24lywv",    # 官方公布 (~3.9K BTC)
+        ],
+        "Gemini": [
+            "3JZq4atUahhuA9rLhXLMhhTo133J9rF97j",           # Gemini cold
+        ],
+    }
     
-    if holdings > 0:
-        display_val = holdings
-        status_text = status
-        color = "🟢" if holdings > 200000 else "🟡"
-        score = 0.5
-    else:
-        display_val = float('nan')
-        status_text = "API 暂不可用"
-        color = "⚪"
-        score = 0
-
-    return IndicatorResult(
-        name="机构持仓(代理)",
-        value=display_val,
-        score=score,
-        color=color,
-        status=status_text,
-        priority="P2",
-        url="https://bitcointreasuries.net"
-    )
+    total_btc = 0
+    exchange_details = {}
+    success_count = 0
+    error_count = 0
+    
+    try:
+        for exchange, addrs in EXCHANGE_WALLETS.items():
+            exchange_total = 0
+            for addr in addrs:
+                try:
+                    resp = requests.get(
+                        f"https://mempool.space/api/address/{addr}",
+                        timeout=8,
+                        headers={"User-Agent": "Mozilla/5.0"}
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        chain = data.get("chain_stats", {})
+                        funded = chain.get("funded_txo_sum", 0)
+                        spent = chain.get("spent_txo_sum", 0)
+                        balance = (funded - spent) / 1e8
+                        exchange_total += balance
+                        success_count += 1
+                    elif resp.status_code == 429:
+                        # Rate limited, skip remaining
+                        print(f"⚠️ mempool.space rate limit, 已获取 {success_count} 个地址")
+                        break
+                    else:
+                        error_count += 1
+                except Exception:
+                    error_count += 1
+                _time.sleep(0.4)  # Rate limit: 250 req/min
+            
+            if exchange_total > 0:
+                exchange_details[exchange] = exchange_total
+                total_btc += exchange_total
+        
+        if success_count < 3:
+            return IndicatorResult(
+                name="交易所余额",
+                value=float('nan'),
+                score=0,
+                color="⚪",
+                status="API 连接失败 (mempool.space)",
+                priority="P2",
+                url="https://mempool.space",
+                description="通过 mempool.space 查询已知交易所冷钱包地址余额。",
+                method="因网络问题无法连接 mempool.space API。"
+            )
+        
+        # 格式化各交易所明细
+        details_str = " | ".join([
+            f"{name} {btc/1000:.0f}K"
+            for name, btc in sorted(exchange_details.items(), key=lambda x: -x[1])
+        ])
+        
+        # 历史对比：保存/读取上次余额快照用于趋势判断
+        import json, os
+        snapshot_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "btc_web", "exchange_balance_history.json")
+        
+        prev_total = None
+        try:
+            if os.path.exists(snapshot_file):
+                with open(snapshot_file, "r") as f:
+                    history = json.load(f)
+                if history:
+                    prev_total = history[-1].get("total", None)
+        except:
+            pass
+        
+        # 保存当前快照
+        try:
+            history = []
+            if os.path.exists(snapshot_file):
+                with open(snapshot_file, "r") as f:
+                    history = json.load(f)
+            
+            history.append({
+                "timestamp": datetime.now().isoformat(),
+                "total": total_btc,
+                "details": exchange_details
+            })
+            # 只保留最近30条记录
+            history = history[-30:]
+            
+            with open(snapshot_file, "w") as f:
+                json.dump(history, f, indent=2)
+        except:
+            pass
+        
+        # 评分逻辑
+        total_k = total_btc / 1000
+        
+        if prev_total:
+            change = total_btc - prev_total
+            change_pct = (change / prev_total) * 100
+            
+            if change_pct < -2:
+                score, color = 1, "🟢"
+                trend = f"流出 {abs(change):,.0f} BTC ↓"
+            elif change_pct < -0.5:
+                score, color = 0.5, "🟢"
+                trend = f"小幅流出 {abs(change):,.0f} BTC ↓"
+            elif change_pct > 2:
+                score, color = -1, "🔴"
+                trend = f"流入 {change:,.0f} BTC ↑"
+            elif change_pct > 0.5:
+                score, color = -0.5, "🟠"
+                trend = f"小幅流入 {change:,.0f} BTC ↑"
+            else:
+                score, color = 0, "🟡"
+                trend = "余额稳定 →"
+            
+            status = f"{total_k:.0f}K BTC | {trend}"
+        else:
+            # 首次运行，无历史对比
+            score, color = 0, "🟡"
+            status = f"{total_k:.0f}K BTC | 首次采集"
+        
+        return IndicatorResult(
+            name="交易所余额",
+            value=round(total_btc, 2),
+            score=score,
+            color=color,
+            status=f"{status} | {details_str}",
+            priority="P2",
+            url="https://mempool.space",
+            description=(
+                f"监控主要交易所冷钱包BTC余额（{len(EXCHANGE_WALLETS)}家交易所，{sum(len(v) for v in EXCHANGE_WALLETS.values())}个地址）。"
+                f"余额减少表示用户提币自托管（看多），余额增加表示潜在卖压（看空）。"
+            ),
+            method=(
+                f"通过 mempool.space 免费API查询已知交易所冷钱包链上余额。"
+                f"当前监控: {', '.join(EXCHANGE_WALLETS.keys())}。"
+                f"对比上次采集数据计算净流入/流出趋势。"
+            )
+        )
+        
+    except Exception as e:
+        print(f"⚠️ Exchange Reserve Failed: {e}")
+        return IndicatorResult(
+            name="交易所余额",
+            value=float('nan'),
+            score=0,
+            color="⚪",
+            status="数据获取失败",
+            priority="P2",
+            url="https://mempool.space",
+            description="通过 mempool.space 查询已知交易所冷钱包地址余额。",
+            method="因异常无法获取数据。"
+        )
 
 
 # ============================================================
@@ -1973,10 +2119,243 @@ def fetch_crypto_news(limit: int = 20) -> list:
     return news_list[:limit]
 
 
-def fetch_whale_activity(min_btc: int = 10, limit: int = 15) -> list:
+def fetch_exchange_balance_display() -> dict:
+    """
+    获取交易所BTC余额展示数据（给前端展示用）
+    - 返回各交易所余额明细
+    - 通过 blockchain.info 交易历史计算 24h/7d/30d 变化
+    """
+    import time as _time, json, os
+    
+    EXCHANGE_WALLETS = {
+        "Binance": [
+            "34xp4vRoCGJym3xR7yCVPFHoCNxv4Twseo",
+            "bc1qm34lsc65zpw79lxes69zkqmk6ee3ewf0j77s3h",
+            "3M219KR5vEneNb47ewrPfWyb5jQ2DjxRP6",
+            "1NDyJtNTjmwk5xPNhjgAMu4HDHigtobu1s",
+            "39884E3j6KZj82FK4vcCrkUvWYL5MQaS3v",
+        ],
+        "Bitfinex": [
+            "bc1qgdjqv0av3q56jvd82tkdjpy7gdp9ut8tlqmgrpmv24sq90ecnvqqjwvw97",
+        ],
+        "Kraken": [
+            "bc1qr4dl5wa7kl8yu792dceg9z5knl2gkn220lk7a9",
+            "3AfSMeESFHT2xLqkR1ufoKcxNqNP5bfcaX",
+        ],
+        "Crypto.com": [
+            "bc1qpy4jwethqenp4r7hqls660wy8287vw0my32lmy",
+            "bc1q4c8n5t00jmj8temxdgcc3t32nkg2wjwz24lywv",
+        ],
+        "Gemini": [
+            "3JZq4atUahhuA9rLhXLMhhTo133J9rF97j",
+        ],
+    }
+    
+    result = {
+        "exchanges": [],
+        "total": 0,
+        "changes": {"24h": None, "7d": None, "30d": None},
+        "history": [],
+        "fetched": 0,
+        "error": None,
+    }
+    
+    total_btc = 0
+    exchange_list = []
+    # 用于历史计算: addr -> {current, txs}
+    addr_data_map = {}
+    
+    try:
+        # 第1步: 获取所有地址当前余额 (mempool.space)
+        for exchange, addrs in EXCHANGE_WALLETS.items():
+            exchange_total = 0
+            for addr in addrs:
+                try:
+                    resp = requests.get(
+                        f"https://mempool.space/api/address/{addr}",
+                        timeout=8,
+                        headers={"User-Agent": "Mozilla/5.0"}
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        chain = data.get("chain_stats", {})
+                        balance = (chain.get("funded_txo_sum", 0) - chain.get("spent_txo_sum", 0)) / 1e8
+                        exchange_total += balance
+                        addr_data_map[addr] = {"current": balance}
+                        result["fetched"] += 1
+                    elif resp.status_code == 429:
+                        break
+                except:
+                    pass
+                _time.sleep(0.3)
+            
+            if exchange_total > 0:
+                exchange_list.append({
+                    "name": exchange,
+                    "balance": round(exchange_total, 2),
+                })
+                total_btc += exchange_total
+        
+        exchange_list.sort(key=lambda x: -x["balance"])
+        result["exchanges"] = exchange_list
+        result["total"] = round(total_btc, 2)
+        
+        # 第2步: 通过 blockchain.info 获取交易历史, 反推历史余额
+        now = _time.time()
+        target_ages = {
+            "24h": 24 * 3600,
+            "7d": 7 * 24 * 3600,
+            "30d": 30 * 24 * 3600,
+        }
+        
+        # 每个地址的历史余额 {period: {addr: bal}}
+        hist_balances = {p: {} for p in target_ages}
+        
+        for addr, info in addr_data_map.items():
+            try:
+                resp = requests.get(
+                    f"https://blockchain.info/rawaddr/{addr}?limit=50&offset=0",
+                    timeout=15,
+                    headers={"User-Agent": "Mozilla/5.0"}
+                )
+                if resp.status_code == 200:
+                    raw = resp.json()
+                    txs = raw.get("txs", [])
+                    
+                    # 按时间倒序排列 (最新的先)
+                    txs.sort(key=lambda t: t.get("time", 0), reverse=True)
+                    
+                    bal = info["current"]
+                    # 标记每个时间窗口是否已经找到对应的历史余额
+                    found = {p: False for p in target_ages}
+                    
+                    for tx in txs:
+                        tx_time = tx.get("time", 0)
+                        if tx_time == 0:
+                            continue
+                        tx_age = now - tx_time
+                        
+                        # 检查是否跨过任何目标时间点
+                        for period, age_sec in target_ages.items():
+                            if not found[period] and tx_age >= age_sec:
+                                hist_balances[period][addr] = bal
+                                found[period] = True
+                        
+                        # 反推: 计算此交易对此地址的净变化
+                        net_satoshi = 0
+                        for out in tx.get("out", []):
+                            if out.get("addr") == addr:
+                                net_satoshi += out.get("value", 0)
+                        for inp in tx.get("inputs", []):
+                            prev = inp.get("prev_out", {})
+                            if prev.get("addr") == addr:
+                                net_satoshi -= prev.get("value", 0)
+                        
+                        bal -= net_satoshi / 1e8
+                    
+                    # 如果所有交易都在目标窗口之内，用最旧的余额作为近似
+                    for period in target_ages:
+                        if not found[period] and txs:
+                            hist_balances[period][addr] = bal
+                            
+                elif resp.status_code == 429:
+                    print(f"⚠️ blockchain.info rate limit for {addr[:12]}...")
+            except Exception as e:
+                print(f"⚠️ History fetch error for {addr[:12]}: {e}")
+            _time.sleep(0.5)
+        
+        # 第3步: 汇总历史余额，计算变化百分比
+        for period, age_sec in target_ages.items():
+            hist_total = 0
+            has_data = False
+            for addr, info in addr_data_map.items():
+                if addr in hist_balances[period]:
+                    hist_total += hist_balances[period][addr]
+                    has_data = True
+                else:
+                    # 没有交易记录的地址，假设余额未变
+                    hist_total += info["current"]
+            
+            if has_data and hist_total > 0:
+                change = total_btc - hist_total
+                pct = (change / hist_total) * 100
+                result["changes"][period] = {
+                    "change_btc": round(change, 2),
+                    "change_pct": round(pct, 4),
+                    "prev_total": round(hist_total, 2),
+                }
+        
+        # 第4步: 仍旧保存快照用于备份
+        snapshot_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "btc_web", "exchange_balance_history.json")
+        if total_btc > 0:
+            try:
+                history = []
+                if os.path.exists(snapshot_file):
+                    with open(snapshot_file, "r") as f:
+                        history = json.load(f)
+                history.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "total": round(total_btc, 2),
+                    "details": {e["name"]: e["balance"] for e in exchange_list}
+                })
+                history = history[-60:]
+                with open(snapshot_file, "w") as f:
+                    json.dump(history, f, indent=2)
+            except:
+                pass
+        
+    except Exception as e:
+        result["error"] = str(e)
+    
+    return result
+
+
+def fetch_whale_volume_stats() -> dict:
+    """
+    获取 BTC 买卖量统计 (24h / 7d / 30d)
+    - 数据源: Binance Kline API (taker buy/sell volume)
+    - 返回: 各时间段内的买入量、卖出量、买入占比
+    """
+    result = {
+        "24h": {"buy": 0, "sell": 0, "total": 0, "buy_ratio": 50},
+        "7d": {"buy": 0, "sell": 0, "total": 0, "buy_ratio": 50},
+        "30d": {"buy": 0, "sell": 0, "total": 0, "buy_ratio": 50},
+    }
+    
+    try:
+        response = requests.get(
+            "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=30",
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        
+        if response.status_code == 200:
+            klines = response.json()
+            
+            for period_name, days in [("24h", 1), ("7d", 7), ("30d", 30)]:
+                subset = klines[-days:]
+                total_vol = sum(float(k[5]) for k in subset)
+                buy_vol = sum(float(k[9]) for k in subset)
+                sell_vol = total_vol - buy_vol
+                buy_ratio = (buy_vol / total_vol * 100) if total_vol > 0 else 50
+                
+                result[period_name] = {
+                    "buy": round(buy_vol, 1),
+                    "sell": round(sell_vol, 1),
+                    "total": round(total_vol, 1),
+                    "buy_ratio": round(buy_ratio, 1),
+                }
+    except Exception as e:
+        print(f"⚠️ Binance Volume Stats Failed: {e}")
+    
+    return result
+
+
+def fetch_whale_activity(min_btc: int = 10, limit: int = 50) -> list:
     """
     获取 BTC 鲸鱼/大额交易监控
-    - 主要数据源: Blockchain.com 未确认交易
+    - 主要数据源: Blockchain.com 最新区块中的已确认大额交易
+    - 补充数据源: Blockchain.com 未确认交易（内存池）
     - 备用数据源: mempool.space 最新交易
     - 最终后备: 模拟示例数据
     - 按时间排序，最新在前
@@ -1995,66 +2374,143 @@ def fetch_whale_activity(min_btc: int = 10, limit: int = 15) -> list:
     except:
         pass
     
-    # 方法1: 从 Blockchain.com 获取未确认交易
+    min_satoshi = min_btc * 100000000
+    
+    def classify_tx(btc_amount):
+        """判断交易类型"""
+        if btc_amount >= 1000:
+            return "🐋 巨鲸", "🐋"
+        elif btc_amount >= 500:
+            return "🔥 超大额", "🔥"
+        elif btc_amount >= 100:
+            return "💰 大额", "💰"
+        elif btc_amount >= 50:
+            return "📊 中额", "📊"
+        else:
+            return "💵 交易", "💵"
+    
+    def parse_tx(tx, source_label=""):
+        """解析交易数据并返回whale记录"""
+        total_out = sum(out.get("value", 0) for out in tx.get("out", []))
+        if total_out < min_satoshi:
+            return None
+        
+        btc_amount = total_out / 100000000
+        tx_time = tx.get("time", 0)
+        tx_hash = tx.get("hash", "")
+        
+        if tx_time:
+            tx_datetime = datetime.fromtimestamp(tx_time)
+            time_str = tx_datetime.strftime("%m-%d %H:%M")
+        else:
+            tx_time = datetime.now().timestamp()
+            time_str = "待确认"
+        
+        tx_type, icon = classify_tx(btc_amount)
+        if source_label:
+            tx_type = f"{tx_type}"
+        
+        return {
+            "amount": f"{btc_amount:,.2f} BTC",
+            "value_usd": f"${btc_amount * btc_price:,.0f}",
+            "hash": tx_hash[:10] + "...",
+            "full_hash": tx_hash,
+            "time": time_str,
+            "timestamp": tx_time,
+            "type": tx_type,
+            "icon": icon,
+            "url": f"https://www.blockchain.com/explorer/transactions/btc/{tx_hash}"
+        }
+    
+    seen_hashes = set()
+    
+    # 方法1: 从最新确认区块中获取大额交易（数据最丰富）
     try:
-        response = requests.get(
-            "https://blockchain.info/unconfirmed-transactions?format=json",
+        # 获取最新区块信息
+        latest_resp = requests.get(
+            "https://blockchain.info/latestblock",
             timeout=10,
             headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
         )
         
-        if response.status_code == 200:
-            data = response.json()
-            txs = data.get("txs", [])
+        if latest_resp.status_code == 200:
+            latest_block = latest_resp.json()
+            block_hash = latest_block.get("hash", "")
             
-            min_satoshi = min_btc * 100000000
+            # 逐块扫描，最多扫描3个区块
+            blocks_scanned = 0
+            current_hash = block_hash
             
-            for tx in txs[:500]:
-                total_out = sum(out.get("value", 0) for out in tx.get("out", []))
-                
-                if total_out >= min_satoshi:
-                    btc_amount = total_out / 100000000
-                    tx_time = tx.get("time", 0)
-                    tx_hash = tx.get("hash", "")
+            while current_hash and blocks_scanned < 3 and len(whale_list) < limit:
+                try:
+                    block_resp = requests.get(
+                        f"https://blockchain.info/rawblock/{current_hash}",
+                        timeout=20,
+                        headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+                    )
                     
-                    if tx_time:
-                        tx_datetime = datetime.fromtimestamp(tx_time)
-                        time_str = tx_datetime.strftime("%m-%d %H:%M")
+                    if block_resp.status_code == 200:
+                        block_data = block_resp.json()
+                        block_txs = block_data.get("tx", [])
+                        prev_block = block_data.get("prev_block", "")
+                        
+                        for tx in block_txs:
+                            tx_hash = tx.get("hash", "")
+                            if tx_hash in seen_hashes:
+                                continue
+                            
+                            record = parse_tx(tx)
+                            if record:
+                                seen_hashes.add(tx_hash)
+                                whale_list.append(record)
+                                
+                                if len(whale_list) >= limit:
+                                    break
+                        
+                        current_hash = prev_block
+                        blocks_scanned += 1
                     else:
-                        tx_time = datetime.now().timestamp()
-                        time_str = "待确认"
-                    
-                    # 判断交易类型
-                    if btc_amount >= 1000:
-                        tx_type, icon = "🐋 巨鲸", "🐋"
-                    elif btc_amount >= 500:
-                        tx_type, icon = "🔥 超大额", "🔥"
-                    elif btc_amount >= 100:
-                        tx_type, icon = "💰 大额", "💰"
-                    elif btc_amount >= 50:
-                        tx_type, icon = "📊 中额", "📊"
-                    else:
-                        tx_type, icon = "💵 交易", "💵"
-                    
-                    whale_list.append({
-                        "amount": f"{btc_amount:,.2f} BTC",
-                        "value_usd": f"${btc_amount * btc_price:,.0f}",
-                        "hash": tx_hash[:10] + "...",
-                        "full_hash": tx_hash,
-                        "time": time_str,
-                        "timestamp": tx_time,
-                        "type": tx_type,
-                        "icon": icon,
-                        "url": f"https://www.blockchain.com/explorer/transactions/btc/{tx_hash}"
-                    })
-                    
-                    if len(whale_list) >= limit:
                         break
                         
+                except Exception as e:
+                    print(f"⚠️ 区块 {blocks_scanned + 1} 获取失败: {e}")
+                    break
+                    
     except Exception as e:
-        print(f"⚠️ Blockchain.com API 失败: {e}")
+        print(f"⚠️ Blockchain.com 区块 API 失败: {e}")
     
-    # 方法2: 如果获取不足，使用 mempool.space API
+    # 方法2: 补充未确认交易（内存池中的大额交易）
+    if len(whale_list) < limit:
+        try:
+            response = requests.get(
+                "https://blockchain.info/unconfirmed-transactions?format=json",
+                timeout=10,
+                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                txs = data.get("txs", [])
+                
+                for tx in txs:
+                    tx_hash = tx.get("hash", "")
+                    if tx_hash in seen_hashes:
+                        continue
+                    
+                    record = parse_tx(tx)
+                    if record:
+                        record["type"] = "⏳ " + record["type"].split(" ", 1)[-1]
+                        record["icon"] = "⏳"
+                        seen_hashes.add(tx_hash)
+                        whale_list.append(record)
+                        
+                        if len(whale_list) >= limit:
+                            break
+                            
+        except Exception as e:
+            print(f"⚠️ Blockchain.com 未确认交易 API 失败: {e}")
+    
+    # 方法3: 如果获取不足，使用 mempool.space API
     if len(whale_list) < 3:
         try:
             response = requests.get(
@@ -2063,11 +2519,14 @@ def fetch_whale_activity(min_btc: int = 10, limit: int = 15) -> list:
             )
             if response.status_code == 200:
                 txs = response.json()
-                for tx in txs[:50]:
+                for tx in txs[:200]:
                     btc_amount = tx.get("value", 0) / 100000000
                     if btc_amount >= min_btc:
                         tx_hash = tx.get("txid", "")
+                        if tx_hash in seen_hashes:
+                            continue
                         
+                        tx_type, icon = classify_tx(btc_amount)
                         whale_list.append({
                             "amount": f"{btc_amount:,.2f} BTC",
                             "value_usd": f"${btc_amount * btc_price:,.0f}",
@@ -2075,17 +2534,18 @@ def fetch_whale_activity(min_btc: int = 10, limit: int = 15) -> list:
                             "full_hash": tx_hash,
                             "time": "待确认",
                             "timestamp": datetime.now().timestamp(),
-                            "type": "⏳ 待确认",
+                            "type": f"⏳ {tx_type.split(' ', 1)[-1]}",
                             "icon": "⏳",
                             "url": f"https://mempool.space/tx/{tx_hash}"
                         })
+                        seen_hashes.add(tx_hash)
                         
                         if len(whale_list) >= limit:
                             break
         except Exception as e:
             print(f"⚠️ mempool.space API 失败: {e}")
     
-    # 方法3: 如果仍然没有数据，显示示例/提示
+    # 方法4: 如果仍然没有数据，显示示例/提示
     if len(whale_list) < 2:
         now = datetime.now()
         sample_transactions = [
@@ -2886,32 +3346,32 @@ def get_indicator_history(indicator_name: str, df: pd.DataFrame = None, days: in
 
 # 权重配置
 WEIGHTS = {
-    # 长期指标 (周期/定投参考)
-    "Mayer Multiple": 0.10,
-    "Pi Cycle Top": 0.08,
-    "减半周期": 0.08,
-    "Ahr999": 0.08,
-    "幂律走廊": 0.08,
-    "2-Year MA Mult": 0.08,  # 新增
-    "200-Week Heatmap": 0.08, # 新增
-    "Golden Ratio": 0.08,     # 新增
-    # 短期指标 (交易参考)
-    "RSI(14)": 0.06,  # 稍微降低短期权重
-    "MACD": 0.06,
-    "布林带": 0.05,
-    "恐惧贪婪指数": 0.06,
-    "资金费率": 0.05,
-    "多空比": 0.05,
+    # ═══ 长期指标 55% (周期/定投参考) ═══
+    "Mayer Multiple": 0.08,
+    "Pi Cycle Top": 0.07,
+    "减半周期": 0.07,
+    "Ahr999": 0.07,
+    "幂律走廊": 0.07,
+    "2-Year MA Mult": 0.06,
+    "200-Week Heatmap": 0.06,
+    "Golden Ratio": 0.07,
+    # ═══ 短期指标 30% (交易参考) ═══
+    "RSI(14)": 0.05,
+    "MACD": 0.05,
+    "恐惧贪婪指数": 0.05,
+    "布林带": 0.04,
+    "资金费率": 0.04,
+    "多空比": 0.04,
     "最大痛点": 0.03,
-    # 辅助指标
-    "BTC市占率": 0.02,
-    "ETF资金流": 0.02,
-    "公司持仓": 0.01,  # 降低辅助指标权重
-    "交易所余额": 0.00,  # 已废弃
-    "全网算力": 0.01,   # 新增
-    "均衡价格": 0.03,   # 新增
-    "长期持有者(CDD)": 0.08, # 新增 (代理 LTH Supply)
-}
+    # ═══ 辅助指标 15% ═══
+    "长期持有者(CDD)": 0.06,
+    "均衡价格": 0.03,
+    "交易所余额": 0.02,
+    "ETF资金流": 0.01,
+    "BTC市占率": 0.01,
+    "全网算力": 0.01,
+    "公司持仓": 0.01,
+}  # 总和 = 1.00 (100%)
 
 
 def calculate_total_score(indicators: Dict[str, IndicatorResult]) -> Tuple[float, str]:

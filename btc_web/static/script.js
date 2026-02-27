@@ -195,8 +195,20 @@ function renderSummaryTable(indicators) {
             return pA - pB;
         });
 
+    // 统计各分类数量
+    const counts = { all: 0, P0: 0, P1: 0, P2: 0 };
+
     for (const [name, indicator] of sortedIndicators) {
         const row = document.createElement('tr');
+
+        // 设置优先级分类属性
+        const priority = indicator.priority || 'P2';
+        // 兼容 "短期" 等中文优先级
+        const normalizedPriority = priority === '短期' ? 'P1' : (priorityOrder.includes(priority) ? priority : 'P2');
+        row.setAttribute('data-priority', normalizedPriority);
+
+        counts.all++;
+        counts[normalizedPriority] = (counts[normalizedPriority] || 0) + 1;
 
         // 获取结论和样式
         const conclusion = getConclusion(indicator);
@@ -224,6 +236,42 @@ function renderSummaryTable(indicators) {
 
         tbody.appendChild(row);
     }
+
+    // 更新 tab 上的数量标注
+    document.querySelectorAll('.summary-tab').forEach(tab => {
+        const cat = tab.getAttribute('data-category');
+        const count = counts[cat] || 0;
+        const label = { all: '全部', P0: '长期', P1: '短期', P2: '辅助' }[cat] || cat;
+        tab.textContent = `${label} (${count})`;
+    });
+
+    // 初始化 tab 事件
+    initSummaryTabs();
+}
+
+/**
+ * 初始化指标总览分类标签
+ */
+function initSummaryTabs() {
+    const tabs = document.querySelectorAll('.summary-tab');
+    tabs.forEach(tab => {
+        tab.onclick = function () {
+            // 切换 active 状态
+            tabs.forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+
+            const category = this.getAttribute('data-category');
+            const rows = document.querySelectorAll('#summaryTableBody tr');
+
+            rows.forEach(row => {
+                if (category === 'all' || row.getAttribute('data-priority') === category) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        };
+    });
 }
 
 /**
@@ -597,6 +645,14 @@ async function fetchNewsData() {
             if (data.whales && data.whales.length > 0) {
                 renderWhaleActivity(data.whales);
             }
+            // 渲染鲸鱼买卖量统计
+            if (data.whale_stats) {
+                renderWhaleStats(data.whale_stats);
+            }
+            // 渲染交易所BTC余额
+            if (data.exchange_balance) {
+                renderExchangeBalance(data.exchange_balance);
+            }
             // 渲染宏观经济日历
             if (data.calendar && data.calendar.length > 0) {
                 renderMacroCalendar(data.calendar);
@@ -634,6 +690,129 @@ function renderCryptoNews(news) {
 
 /**
  * 渲染鲸鱼动态
+ */
+/**
+ * 渲染交易所BTC余额
+ */
+function renderExchangeBalance(data) {
+    const container = document.getElementById('exchangeBalance');
+    if (!container || !data.exchanges) return;
+
+    const fmtBtc = (v) => v >= 1000 ? `${(v / 1000).toFixed(1)}K` : v.toLocaleString();
+    const maxBalance = Math.max(...data.exchanges.map(e => e.balance));
+
+    // 两列布局: 左=总额+变化 | 右=各交易所
+    let leftHtml = '';
+    let rightHtml = '';
+
+    // 左侧: 总额 + 历史变化
+    leftHtml += `
+        <div class="exb-total">
+            <span class="exb-total-label">监控总余额</span>
+            <span class="exb-total-value">${fmtBtc(data.total)} BTC</span>
+        </div>
+    `;
+
+    const changes = data.changes || {};
+    const windows = [
+        { label: '24小时', key: '24h' },
+        { label: '7天', key: '7d' },
+        { label: '30天', key: '30d' },
+    ];
+
+    leftHtml += '<div class="exb-history-row">';
+    for (const w of windows) {
+        const c = changes[w.key];
+        if (c) {
+            const pct = c.change_pct.toFixed(2);
+            const cls = c.change_pct > 0 ? 'positive' : c.change_pct < 0 ? 'negative' : 'neutral';
+            const sign = c.change_pct > 0 ? '+' : '';
+            const hint = c.change_pct > 0 ? '流入 (卖压↑)' : c.change_pct < 0 ? '流出 (吸筹↑)' : '持平';
+            leftHtml += `
+                <div class="exb-history-item">
+                    <span class="exb-history-label">${w.label}</span>
+                    <span class="exb-history-change ${cls}">${sign}${pct}%</span>
+                    <span class="exb-history-hint">${hint}</span>
+                </div>
+            `;
+        } else {
+            leftHtml += `
+                <div class="exb-history-item">
+                    <span class="exb-history-label">${w.label}</span>
+                    <span class="exb-history-change neutral">--</span>
+                    <span class="exb-history-hint">数据不足</span>
+                </div>
+            `;
+        }
+    }
+    leftHtml += '</div>';
+
+    // 右侧: 各交易所柱形图
+    rightHtml += '<div class="exb-list">';
+    for (const ex of data.exchanges) {
+        const pct = maxBalance > 0 ? (ex.balance / maxBalance * 100) : 0;
+        rightHtml += `
+            <div class="exb-item">
+                <span class="exb-name">${ex.name}</span>
+                <div class="exb-bar-wrap">
+                    <div class="exb-bar" style="width: ${pct}%"></div>
+                </div>
+                <span class="exb-value">${fmtBtc(ex.balance)}</span>
+            </div>
+        `;
+    }
+    rightHtml += '</div>';
+
+    container.innerHTML = `
+        <div class="exb-layout">
+            <div class="exb-col-left">${leftHtml}</div>
+            <div class="exb-col-right">${rightHtml}</div>
+        </div>
+    `;
+}
+
+/**
+ * 渲染鲸鱼买卖量统计 (24h / 7d / 30d)
+ */
+function renderWhaleStats(stats) {
+    const container = document.getElementById('whaleStats');
+    if (!container) return;
+
+    const periods = [
+        { key: '24h', label: '24小时' },
+        { key: '7d', label: '7天' },
+        { key: '30d', label: '30天' }
+    ];
+
+    let html = '';
+    for (const p of periods) {
+        const d = stats[p.key];
+        if (!d) continue;
+        const ratio = d.buy_ratio || 50;
+        const ratioClass = ratio > 52 ? 'bullish' : ratio < 48 ? 'bearish' : 'neutral';
+
+        // Format volume numbers
+        const fmtVol = (v) => v >= 1000 ? `${(v / 1000).toFixed(1)}K` : `${Math.round(v)}`;
+
+        html += `
+            <div class="whale-stat-item">
+                <span class="whale-stat-label">${p.label}</span>
+                <div class="whale-stat-ratio ${ratioClass}">${ratio.toFixed(1)}%</div>
+                <div class="whale-stat-bar">
+                    <div class="whale-stat-bar-fill" style="width: ${ratio}%"></div>
+                </div>
+                <div class="whale-stat-values">
+                    <span class="whale-stat-buy">买 ${fmtVol(d.buy)}</span>
+                    <span class="whale-stat-sell">卖 ${fmtVol(d.sell)}</span>
+                </div>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
+}
+
+/**
+ * 渲染鲸鱼大额交易列表
  */
 function renderWhaleActivity(whales) {
     const container = document.getElementById('whaleActivity');

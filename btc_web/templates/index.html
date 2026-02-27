@@ -16,7 +16,7 @@
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=5">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=10">
 </head>
 
 <body>
@@ -111,26 +111,167 @@
                         </div>
                         <div class="score-value" id="scoreValue">--</div>
                         <div class="recommendation yellow" id="recommendation">加载中...</div>
+
+                        <details class="score-explain">
+                            <summary class="score-explain-toggle">📖 评分说明</summary>
+                            <div class="score-explain-content">
+                                <div class="explain-section">
+                                    <h4>计算方式</h4>
+                                    <p>综合评分 = Σ(指标得分 × 权重) / Σ权重</p>
+                                    <p>每个指标得分范围 <b>-1</b>(极度看空) ~ <b>+1</b>(极度看多)</p>
+                                </div>
+                                <div class="explain-section">
+                                    <h4>区间划分</h4>
+                                    <table class="explain-table">
+                                        <tr>
+                                            <td class="range-cell green">≥ 0.8</td>
+                                            <td>强烈买入</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell green">0.4 ~ 0.8</td>
+                                            <td>买入</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell green-light">0.1 ~ 0.4</td>
+                                            <td>增持</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell yellow">-0.1 ~ 0.1</td>
+                                            <td>持有/观望</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell orange">-0.4 ~ -0.1</td>
+                                            <td>减仓</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell red">-0.8 ~ -0.4</td>
+                                            <td>卖出</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell red">≤ -0.8</td>
+                                            <td>清仓</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                                <div class="explain-section">
+                                    <h4>权重分配</h4>
+                                    <div class="weight-group">
+                                        <span class="weight-label">长期 (55%)</span>
+                                        <span class="weight-detail">Mayer 8% · Pi Cycle 7% · 减半 7% · Ahr999 7% · 幂律 7%
+                                            · 2Y-MA 6% · 200W 6% · 黄金比 7%</span>
+                                    </div>
+                                    <div class="weight-group">
+                                        <span class="weight-label">短期 (30%)</span>
+                                        <span class="weight-detail">RSI 5% · MACD 5% · 恐贪 5% · 布林带 4% · 资金费率 4% · 多空比 4%
+                                            · 最大痛点 3%</span>
+                                    </div>
+                                    <div class="weight-group">
+                                        <span class="weight-label">辅助 (15%)</span>
+                                        <span class="weight-detail">CDD 6% · 均衡价格 3% · 交易所余额 2% · ETF 1% · 市占率 1% · 算力
+                                            1%
+                                            · 公司持仓 1%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
                     </div>
 
                     <!-- Right: Summary Table -->
                     <div class="summary-table-container">
                         <h2 class="table-title">指标总览</h2>
-                        <table class="summary-table" id="summaryTable">
-                            <thead>
-                                <tr>
-                                    <th>指标</th>
-                                    <th>数值</th>
-                                    <th>结论</th>
-                                </tr>
-                            </thead>
-                            <tbody id="summaryTableBody">
-                                <!-- Dynamically populated -->
-                            </tbody>
-                        </table>
+                        <div class="summary-tabs">
+                            <button class="summary-tab active" data-category="all">全部</button>
+                            <button class="summary-tab" data-category="P0">长期</button>
+                            <button class="summary-tab" data-category="P1">短期</button>
+                            <button class="summary-tab" data-category="P2">辅助</button>
+                        </div>
+                        <div class="summary-table-scroll">
+                            <table class="summary-table" id="summaryTable">
+                                <thead>
+                                    <tr>
+                                        <th>指标</th>
+                                        <th>数值</th>
+                                        <th>结论</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="summaryTableBody">
+                                    <!-- Dynamically populated -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Right: External Links -->
+                    <div class="ext-links-container">
+                        <h2 class="table-title">🔗 更多看板</h2>
+                        <div class="ext-links-list">
+                            <a href="https://content.biteye.info/btc" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">👁️</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">Biteye 抄底小助手</span>
+                                    <span class="ext-link-desc">BTC 抄底时机参考</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="https://btcdash-h668bzcr.manus.space/" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">📊</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">BTC Dashboard</span>
+                                    <span class="ext-link-desc">Manus AI 看板</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="https://crypto3d.pro/" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">🧊</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">Crypto3D 数据站</span>
+                                    <span class="ext-link-desc">AHR999 · MVRV · BTC.D</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="https://fuckbtc.com/" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">⛓️</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">BTC 链上看板</span>
+                                    <span class="ext-link-desc">关机币价 · 200WMA · MVRV</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="https://9992100.xyz/" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">📉</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">AHR999 实时</span>
+                                    <span class="ext-link-desc">AHR999 指数实时追踪</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="http://probs.fuckbtc.com/" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">🎲</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">BTC 价格概率分布</span>
+                                    <span class="ext-link-desc">预测市场推导的价格 PDF</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                        </div>
                     </div>
                 </div>
     </div>
+    </section>
+
+    <!-- 交易所BTC余额模块 -->
+    <section class="exchange-balance-section" style="margin-top: 30px;">
+        <h2 class="section-title">
+            <span class="icon">🏦</span>
+            交易所BTC余额
+            <span style="font-size: 0.75rem; color: #888; font-weight: normal; margin-left: 10px;">mempool.space
+                链上冷钱包余额监控</span>
+        </h2>
+        <div class="exchange-balance-card-standalone">
+            <div id="exchangeBalance">
+                <p style="color: #888;">加载中...</p>
+            </div>
+        </div>
     </section>
 
 
@@ -160,12 +301,15 @@
 
                 <!-- 巨鲸动态 -->
                 <div class="news-card whale-card">
-                    <h3 style="color: #f79322; margin-bottom: 15px; font-size: 1.1rem; flex-shrink: 0;">
+                    <h3 style="color: #f79322; margin-bottom: 10px; font-size: 1.1rem; flex-shrink: 0;">
                         🐋 巨鲸动态
                         <span
                             style="font-size: 0.75rem; color: #888; font-weight: normal; display: block; margin-top: 3px;">Blockchain.com
                             实时大额交易</span>
                     </h3>
+                    <div id="whaleStats" class="whale-stats-container" style="flex-shrink: 0;">
+                        <!-- JS 动态填充 -->
+                    </div>
                     <div id="whaleActivity" class="news-list" style="flex: 1; overflow-y: auto; padding-right: 8px;">
                         <p style="color: #888;">加载中...</p>
                     </div>
@@ -227,7 +371,7 @@
     <!-- Global Tooltip Container (Nuclear Option to bypass clipping) -->
     <div id="global-tooltip" class="card-details-popover" style="position: fixed; z-index: 9999; display: none;"></div>
 
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=10"></script>
 </body>
 
 </html>
