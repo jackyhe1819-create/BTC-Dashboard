@@ -2762,133 +2762,142 @@ def fetch_macro_calendar() -> list:
             return fetch_macro_calendar._cache
     
     try:
-        # 获取本周经济日历 (带重试)
+        # 获取本周和下周经济日历 (确保始终有upcoming事件)
         import time as _time
-        response = None
-        for attempt in range(3):
-            response = requests.get(
-                "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-                timeout=15,
-                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
-            )
-            if response.status_code == 200:
-                break
-            elif response.status_code == 429:
-                wait_secs = 5 * (attempt + 1)
-                print(f"⚠️ 经济日历 API 限流 (429)，{wait_secs}秒后重试...")
-                _time.sleep(wait_secs)
-            else:
-                print(f"⚠️ 经济日历 API 返回 {response.status_code}")
-                break
+        calendar_urls = [
+            "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+            "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
+        ]
+        all_events = []
         
-        if response is not None and response.status_code == 200:
-            events = response.json()
-            
-            for event in events:
-                country = event.get('country', '')
-                title = event.get('title', '')
-                impact = event.get('impact', '')
-                date_str = event.get('date', '')
-                actual = event.get('actual', '')
-                forecast = event.get('forecast', '')
-                previous = event.get('previous', '')
-                
-                # 只关注美元相关的高/中影响事件
-                if country != 'USD':
-                    continue
-                if impact not in ['High', 'Medium']:
-                    continue
-                
-                # 中文名称翻译
-                chinese_name = name_translations.get(title, None)
-                if chinese_name:
-                    display_name = chinese_name
-                else:
-                    # 未翻译的事件添加默认图标
-                    if 'CPI' in title or 'Inflation' in title or 'PPI' in title or 'PCE' in title:
-                        display_name = f'📊 {title}'
-                    elif 'Employ' in title or 'Unemployment' in title or 'Non-Farm' in title or 'NFP' in title:
-                        display_name = f'👷 {title}'
-                    elif 'Fed' in title or 'FOMC' in title or 'Rate' in title or 'Powell' in title:
-                        display_name = f'🏦 {title}'
-                    elif 'GDP' in title:
-                        display_name = f'📈 {title}'
-                    elif 'Retail' in title or 'Consumer' in title:
-                        display_name = f'🛒 {title}'
-                    elif 'ISM' in title or 'PMI' in title or 'Durable' in title:
-                        display_name = f'🏭 {title}'
+        for url in calendar_urls:
+            for attempt in range(2):
+                try:
+                    response = requests.get(
+                        url,
+                        timeout=15,
+                        headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+                    )
+                    if response.status_code == 200:
+                        all_events.extend(response.json())
+                        break
+                    elif response.status_code == 429:
+                        _time.sleep(3 * (attempt + 1))
                     else:
-                        display_name = f'📅 {title}'
-                
-                # 解析时间 (转换为北京时间 UTC+8)
-                try:
-                    event_time = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                    beijing_tz = timezone(timedelta(hours=8))
-                    event_time_beijing = event_time.astimezone(beijing_tz)
-                    display_date = event_time_beijing.strftime("%m-%d %H:%M")
-                except:
-                    display_date = date_str[:16] if len(date_str) > 16 else date_str
-                
-                # 判断事件是否已经过去（已公布）
-                is_past = False
-                try:
-                    event_dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                    beijing_tz_check = timezone(timedelta(hours=8))
-                    now_beijing = datetime.now(beijing_tz_check)
-                    is_past = event_dt < now_beijing
-                except:
-                    pass
-                
-                # 构建数据结果字符串
-                data_result = ""
-                if actual:
-                    data_result = f"公布: {actual}"
-                    if forecast:
-                        data_result += f" · 预期: {forecast}"
-                    if previous:
-                        data_result += f" · 前值: {previous}"
-                elif is_past:
-                    parts = []
-                    if forecast:
-                        parts.append(f"预期: {forecast}")
-                    if previous:
-                        parts.append(f"前值: {previous}")
-                    data_result = " · ".join(parts) if parts else ""
-                else:
-                    parts = []
-                    if forecast:
-                        parts.append(f"预期: {forecast}")
-                    if previous:
-                        parts.append(f"前值: {previous}")
-                    data_result = " · ".join(parts) if parts else ""
-                
-                # 事件状态
-                if actual:
-                    event_status = "已公布"
-                elif is_past:
-                    event_status = "已公布"
-                else:
-                    event_status = "待公布"
-                
-                calendar.append({
-                    "event": display_name,
-                    "date": display_date,
-                    "data": data_result,
-                    "impact": impact_map.get(impact, ''),
-                    "type": "宏观经济",
-                    "has_actual": bool(actual),
-                    "is_past": is_past,
-                    "event_status": event_status,
-                    "forecast": forecast or "",
-                    "previous": previous or "",
-                    "actual": actual or ""
-                })
+                        print(f"⚠️ 经济日历 API 返回 {response.status_code} for {url}")
+                        break
+                except Exception as e:
+                    print(f"⚠️ 经济日历请求失败: {e}")
+                    break
+            _time.sleep(0.5)
+        
+        events = all_events
+        
+        for event in events:
+            country = event.get('country', '')
+            title = event.get('title', '')
+            impact = event.get('impact', '')
+            date_str = event.get('date', '')
+            actual = event.get('actual', '')
+            forecast = event.get('forecast', '')
+            previous = event.get('previous', '')
             
-            # 按时间排序
-            calendar.sort(key=lambda x: x.get('date', ''))
+            # 只关注美元相关的高/中影响事件
+            if country != 'USD':
+                continue
+            if impact not in ['High', 'Medium']:
+                continue
             
-            # 限制返回数量
-            calendar = calendar[:15]
+            # 中文名称翻译
+            chinese_name = name_translations.get(title, None)
+            if chinese_name:
+                display_name = chinese_name
+            else:
+                # 未翻译的事件添加默认图标
+                if 'CPI' in title or 'Inflation' in title or 'PPI' in title or 'PCE' in title:
+                    display_name = f'📊 {title}'
+                elif 'Employ' in title or 'Unemployment' in title or 'Non-Farm' in title or 'NFP' in title:
+                    display_name = f'👷 {title}'
+                elif 'Fed' in title or 'FOMC' in title or 'Rate' in title or 'Powell' in title:
+                    display_name = f'🏦 {title}'
+                elif 'GDP' in title:
+                    display_name = f'📈 {title}'
+                elif 'Retail' in title or 'Consumer' in title:
+                    display_name = f'🛒 {title}'
+                elif 'ISM' in title or 'PMI' in title or 'Durable' in title:
+                    display_name = f'🏭 {title}'
+                else:
+                    display_name = f'📅 {title}'
+            
+            # 解析时间 (转换为北京时间 UTC+8)
+            try:
+                event_time = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                beijing_tz = timezone(timedelta(hours=8))
+                event_time_beijing = event_time.astimezone(beijing_tz)
+                display_date = event_time_beijing.strftime("%m-%d %H:%M")
+            except:
+                display_date = date_str[:16] if len(date_str) > 16 else date_str
+            
+            # 判断事件是否已经过去（已公布）
+            is_past = False
+            try:
+                event_dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                beijing_tz_check = timezone(timedelta(hours=8))
+                now_beijing = datetime.now(beijing_tz_check)
+                is_past = event_dt < now_beijing
+            except:
+                pass
+            
+            # 构建数据结果字符串
+            data_result = ""
+            if actual:
+                data_result = f"公布: {actual}"
+                if forecast:
+                    data_result += f" · 预期: {forecast}"
+                if previous:
+                    data_result += f" · 前值: {previous}"
+            elif is_past:
+                parts = []
+                if forecast:
+                    parts.append(f"预期: {forecast}")
+                if previous:
+                    parts.append(f"前值: {previous}")
+                data_result = " · ".join(parts) if parts else ""
+            else:
+                parts = []
+                if forecast:
+                    parts.append(f"预期: {forecast}")
+                if previous:
+                    parts.append(f"前值: {previous}")
+                data_result = " · ".join(parts) if parts else ""
+            
+            # 事件状态
+            if actual:
+                event_status = "已公布"
+            elif is_past:
+                event_status = "已公布"
+            else:
+                event_status = "待公布"
+            
+            calendar.append({
+                "event": display_name,
+                "date": display_date,
+                "data": data_result,
+                "impact": impact_map.get(impact, ''),
+                "type": "宏观经济",
+                "has_actual": bool(actual),
+                "is_past": is_past,
+                "event_status": event_status,
+                "forecast": forecast or "",
+                "previous": previous or "",
+                "actual": actual or ""
+            })
+        
+        # 按时间排序
+        calendar.sort(key=lambda x: x.get('date', ''))
+        
+        # 限制返回数量
+        calendar = calendar[:15]
                     
     except Exception as e:
         print(f"⚠️ 经济日历 API 失败: {e}")
