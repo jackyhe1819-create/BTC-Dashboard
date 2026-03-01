@@ -253,6 +253,14 @@
                                 </div>
                                 <span class="ext-link-arrow">→</span>
                             </a>
+                            <a href="https://defillama.com/chain/ethereum" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">🦙</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">DefiLlama Ethereum</span>
+                                    <span class="ext-link-desc">以太坊 DeFi TVL 数据看板</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -361,6 +369,18 @@
             <!-- 由 JS 动态填充 -->
         </div>
     </div>
+    <!-- ETH 收款地址 -->
+    <div
+        style="margin-top: 40px; padding: 20px; background: rgba(98, 126, 234, 0.08); border: 1px solid rgba(98, 126, 234, 0.25); border-radius: 12px; text-align: center;">
+        <p style="margin: 0 0 8px 0; font-size: 0.9rem; color: #888;">
+            ☕ 如果觉得有帮助，欢迎打赏 ETH
+        </p>
+        <code id="ethAddress"
+            style="display: inline-block; padding: 8px 16px; background: rgba(255,255,255,0.05); border-radius: 8px; font-size: 0.85rem; color: #627eea; letter-spacing: 0.3px; cursor: pointer; word-break: break-all; border: 1px solid rgba(98,126,234,0.2); transition: all 0.2s;"
+            onclick="navigator.clipboard.writeText('0x46f9ecf6256724bd37beeb8112c2765114301b8e').then(()=>{this.style.borderColor='#4ade80';this.style.color='#4ade80';this.textContent='✅ 已复制!';setTimeout(()=>{this.style.borderColor='';this.style.color='';this.textContent='0x46f9ecf6256724bd37beeb8112c2765114301b8e'},2000)})">0x46f9ecf6256724bd37beeb8112c2765114301b8e</code>
+        <p style="margin: 6px 0 0 0; font-size: 0.75rem; color: #666;">点击地址即可复制</p>
+    </div>
+
     </main>
     </div>
 
