@@ -2123,7 +2123,7 @@ def fetch_exchange_balance_display() -> dict:
     """
     获取交易所BTC余额展示数据（给前端展示用）
     - 返回各交易所余额明细
-    - 通过 blockchain.info 交易历史计算 24h/7d/30d 变化
+    - 通过本地快照文件对比计算 24h/7d/30d 变化（取代 blockchain.info 反推）
     """
     import time as _time, json, os
     
@@ -2162,8 +2162,6 @@ def fetch_exchange_balance_display() -> dict:
     
     total_btc = 0
     exchange_list = []
-    # 用于历史计算: addr -> {current, txs}
-    addr_data_map = {}
     
     try:
         # 第1步: 获取所有地址当前余额 (mempool.space)
@@ -2181,7 +2179,6 @@ def fetch_exchange_balance_display() -> dict:
                         chain = data.get("chain_stats", {})
                         balance = (chain.get("funded_txo_sum", 0) - chain.get("spent_txo_sum", 0)) / 1e8
                         exchange_total += balance
-                        addr_data_map[addr] = {"current": balance}
                         result["fetched"] += 1
                     elif resp.status_code == 429:
                         break
@@ -2200,105 +2197,63 @@ def fetch_exchange_balance_display() -> dict:
         result["exchanges"] = exchange_list
         result["total"] = round(total_btc, 2)
         
-        # 第2步: 通过 blockchain.info 获取交易历史, 反推历史余额
-        now = _time.time()
-        target_ages = {
-            "24h": 24 * 3600,
-            "7d": 7 * 24 * 3600,
-            "30d": 30 * 24 * 3600,
-        }
-        
-        # 每个地址的历史余额 {period: {addr: bal}}
-        hist_balances = {p: {} for p in target_ages}
-        
-        for addr, info in addr_data_map.items():
-            try:
-                resp = requests.get(
-                    f"https://blockchain.info/rawaddr/{addr}?limit=50&offset=0",
-                    timeout=15,
-                    headers={"User-Agent": "Mozilla/5.0"}
-                )
-                if resp.status_code == 200:
-                    raw = resp.json()
-                    txs = raw.get("txs", [])
-                    
-                    # 按时间倒序排列 (最新的先)
-                    txs.sort(key=lambda t: t.get("time", 0), reverse=True)
-                    
-                    bal = info["current"]
-                    # 标记每个时间窗口是否已经找到对应的历史余额
-                    found = {p: False for p in target_ages}
-                    
-                    for tx in txs:
-                        tx_time = tx.get("time", 0)
-                        if tx_time == 0:
-                            continue
-                        tx_age = now - tx_time
-                        
-                        # 检查是否跨过任何目标时间点
-                        for period, age_sec in target_ages.items():
-                            if not found[period] and tx_age >= age_sec:
-                                hist_balances[period][addr] = bal
-                                found[period] = True
-                        
-                        # 反推: 计算此交易对此地址的净变化
-                        net_satoshi = 0
-                        for out in tx.get("out", []):
-                            if out.get("addr") == addr:
-                                net_satoshi += out.get("value", 0)
-                        for inp in tx.get("inputs", []):
-                            prev = inp.get("prev_out", {})
-                            if prev.get("addr") == addr:
-                                net_satoshi -= prev.get("value", 0)
-                        
-                        bal -= net_satoshi / 1e8
-                    
-                    # 如果所有交易都在目标窗口之内，用最旧的余额作为近似
-                    for period in target_ages:
-                        if not found[period] and txs:
-                            hist_balances[period][addr] = bal
-                            
-                elif resp.status_code == 429:
-                    print(f"⚠️ blockchain.info rate limit for {addr[:12]}...")
-            except Exception as e:
-                print(f"⚠️ History fetch error for {addr[:12]}: {e}")
-            _time.sleep(0.5)
-        
-        # 第3步: 汇总历史余额，计算变化百分比
-        for period, age_sec in target_ages.items():
-            hist_total = 0
-            has_data = False
-            for addr, info in addr_data_map.items():
-                if addr in hist_balances[period]:
-                    hist_total += hist_balances[period][addr]
-                    has_data = True
-                else:
-                    # 没有交易记录的地址，假设余额未变
-                    hist_total += info["current"]
-            
-            if has_data and hist_total > 0:
-                change = total_btc - hist_total
-                pct = (change / hist_total) * 100
-                result["changes"][period] = {
-                    "change_btc": round(change, 2),
-                    "change_pct": round(pct, 4),
-                    "prev_total": round(hist_total, 2),
-                }
-        
-        # 第4步: 仍旧保存快照用于备份
+        # 第2步: 通过本地快照文件对比计算 24h/7d/30d 变化
         snapshot_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "btc_web", "exchange_balance_history.json")
+        history = []
+        
+        try:
+            if os.path.exists(snapshot_file):
+                with open(snapshot_file, "r") as f:
+                    history = json.load(f)
+        except:
+            history = []
+        
+        if history and total_btc > 0:
+            now = datetime.now()
+            target_windows = {
+                "24h": timedelta(hours=24),
+                "7d": timedelta(days=7),
+                "30d": timedelta(days=30),
+            }
+            
+            for period, delta in target_windows.items():
+                target_time = now - delta
+                # 找到最接近目标时间的快照
+                best_snap = None
+                best_diff = None
+                
+                for snap in history:
+                    try:
+                        snap_time = datetime.fromisoformat(snap["timestamp"])
+                        diff = abs((snap_time - target_time).total_seconds())
+                        # 允许 ±50% 的时间偏差 (如 24h 窗口允许 12h-36h 范围的快照)
+                        max_drift = delta.total_seconds() * 0.5
+                        if diff <= max_drift and (best_diff is None or diff < best_diff):
+                            best_snap = snap
+                            best_diff = diff
+                    except:
+                        continue
+                
+                if best_snap and best_snap.get("total", 0) > 0:
+                    prev_total = best_snap["total"]
+                    change = total_btc - prev_total
+                    pct = (change / prev_total) * 100
+                    result["changes"][period] = {
+                        "change_btc": round(change, 2),
+                        "change_pct": round(pct, 4),
+                        "prev_total": round(prev_total, 2),
+                    }
+        
+        # 第3步: 保存当前快照
         if total_btc > 0:
             try:
-                history = []
-                if os.path.exists(snapshot_file):
-                    with open(snapshot_file, "r") as f:
-                        history = json.load(f)
                 history.append({
                     "timestamp": datetime.now().isoformat(),
                     "total": round(total_btc, 2),
                     "details": {e["name"]: e["balance"] for e in exchange_list}
                 })
-                history = history[-60:]
+                # 保留最近720条 (按每小时采集一次，可覆盖30天)
+                history = history[-720:]
                 with open(snapshot_file, "w") as f:
                     json.dump(history, f, indent=2)
             except:
@@ -2314,6 +2269,7 @@ def fetch_whale_volume_stats() -> dict:
     """
     获取 BTC 买卖量统计 (24h / 7d / 30d)
     - 数据源: Binance Kline API (taker buy/sell volume)
+    - 备用: Binance.us API (规避美国地区 451 封锁)
     - 返回: 各时间段内的买入量、卖出量、买入占比
     """
     result = {
@@ -2322,31 +2278,46 @@ def fetch_whale_volume_stats() -> dict:
         "30d": {"buy": 0, "sell": 0, "total": 0, "buy_ratio": 50},
     }
     
-    try:
-        response = requests.get(
-            "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=30",
-            timeout=10,
-            headers={"User-Agent": "Mozilla/5.0"}
-        )
-        
-        if response.status_code == 200:
-            klines = response.json()
+    # 多 endpoint 回退: api.binance.com -> api.binance.us -> data-api.binance.vision
+    endpoints = [
+        "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=30",
+        "https://api.binance.us/api/v3/klines?symbol=BTCUSD&interval=1d&limit=30",
+        "https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=30",
+    ]
+    
+    klines = None
+    for url in endpoints:
+        try:
+            response = requests.get(
+                url,
+                timeout=10,
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            if response.status_code == 200:
+                klines = response.json()
+                print(f"✅ Binance Kline OK via {url.split('/')[2]}")
+                break
+            else:
+                print(f"⚠️ Binance Kline {url.split('/')[2]} returned {response.status_code}, trying next...")
+        except Exception as e:
+            print(f"⚠️ Binance Kline {url.split('/')[2]} failed: {e}, trying next...")
+    
+    if klines:
+        for period_name, days in [("24h", 1), ("7d", 7), ("30d", 30)]:
+            subset = klines[-days:]
+            total_vol = sum(float(k[5]) for k in subset)
+            buy_vol = sum(float(k[9]) for k in subset)
+            sell_vol = total_vol - buy_vol
+            buy_ratio = (buy_vol / total_vol * 100) if total_vol > 0 else 50
             
-            for period_name, days in [("24h", 1), ("7d", 7), ("30d", 30)]:
-                subset = klines[-days:]
-                total_vol = sum(float(k[5]) for k in subset)
-                buy_vol = sum(float(k[9]) for k in subset)
-                sell_vol = total_vol - buy_vol
-                buy_ratio = (buy_vol / total_vol * 100) if total_vol > 0 else 50
-                
-                result[period_name] = {
-                    "buy": round(buy_vol, 1),
-                    "sell": round(sell_vol, 1),
-                    "total": round(total_vol, 1),
-                    "buy_ratio": round(buy_ratio, 1),
-                }
-    except Exception as e:
-        print(f"⚠️ Binance Volume Stats Failed: {e}")
+            result[period_name] = {
+                "buy": round(buy_vol, 1),
+                "sell": round(sell_vol, 1),
+                "total": round(total_vol, 1),
+                "buy_ratio": round(buy_ratio, 1),
+            }
+    else:
+        print("⚠️ All Binance endpoints failed for volume stats")
     
     return result
 
