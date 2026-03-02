@@ -818,6 +818,17 @@ function renderWhaleActivity(whales) {
     const container = document.getElementById('whaleActivity');
     if (!container) return;
 
+    // 根据交易类型返回颜色（按金额大小区分，而非买/卖方向）
+    // 链上交易无法判断买/卖，仅展示转账金额
+    function getWhaleColor(type) {
+        if (type.includes('巨鲸')) return '#ffd700';   // 金色 - 超巨额
+        if (type.includes('超大额')) return '#ff9800'; // 橙色 - 超大额
+        if (type.includes('大额')) return '#00e5ff';   // 青色 - 大额
+        if (type.includes('中额')) return '#90caf9';   // 浅蓝 - 中额
+        if (type.includes('⏳')) return '#ffc107';     // 黄色 - 待确认
+        return '#aaa';                                  // 灰色 - 普通
+    }
+
     container.innerHTML = whales.map(item => {
         // 特殊处理 "链接" 类型
         if (item.type === '链接') {
@@ -828,10 +839,12 @@ function renderWhaleActivity(whales) {
             `;
         }
 
+        const typeColor = getWhaleColor(item.type || '');
+
         return `
         <a href="${item.url}" target="_blank" class="whale-item" style="display: block; text-decoration: none; margin-bottom: 8px; padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.9rem; transition: background 0.2s;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="color: ${item.type.includes('流入') || item.type.includes('巨鲸') ? '#00ff88' : '#ff4466'}; display: flex; align-items: center; gap: 4px;">
+                <span style="color: ${typeColor}; display: flex; align-items: center; gap: 4px;">
                     ${item.icon || ''} ${item.type || '交易'}
                 </span>
                 <span style="color: #fff; font-weight: 500;">
