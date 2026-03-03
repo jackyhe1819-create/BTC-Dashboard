@@ -4,7 +4,8 @@
  */
 
 // 自动刷新间隔（毫秒）
-const REFRESH_INTERVAL = 5 * 60 * 1000; // 5分钟
+const REFRESH_INTERVAL = 5 * 60 * 1000; // 5分钟 (指标数据)
+const NEWS_REFRESH_INTERVAL = 10 * 60 * 1000; // 10分钟 (资讯/巨鲸/日历)
 
 // 页面加载时获取数据
 document.addEventListener('DOMContentLoaded', () => {
@@ -14,9 +15,10 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(fetchDashboardData, REFRESH_INTERVAL);
 });
 
-// 刷新按钮点击事件
+// 刷新按钮点击事件（同时刷新指标和资讯）
 document.getElementById('refreshBtn')?.addEventListener('click', () => {
     fetchDashboardData();
+    fetchNewsData();
 });
 
 /**
@@ -987,8 +989,11 @@ function renderCryptoCalendar(events) {
     `).join('');
 }
 
-// 页面加载后获取资讯数据
+// 页面加载后获取资讯数据 + 自动定时刷新
 document.addEventListener('DOMContentLoaded', function () {
     // 延迟获取资讯，优先加载主要指标
     setTimeout(fetchNewsData, 3000);
+
+    // 每 10 分钟自动刷新资讯/巨鲸/日历
+    setInterval(fetchNewsData, NEWS_REFRESH_INTERVAL);
 });
