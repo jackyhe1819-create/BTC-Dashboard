@@ -7,6 +7,27 @@
 const REFRESH_INTERVAL = 5 * 60 * 1000; // 5分钟 (指标数据)
 const NEWS_REFRESH_INTERVAL = 10 * 60 * 1000; // 10分钟 (资讯/巨鲸/日历)
 
+// History drawer state
+const historyCache = {};        // { "Ahr999:30": {dates, values, thresholds} }
+let drawerChartInstance = null; // Chart.js instance
+let currentDrawerIndicator = null;
+
+// Threshold reference lines for key indicators
+const INDICATOR_THRESHOLDS = {
+    "Ahr999": [
+        { value: 0.45, label: "定投线", color: "#00ff88" },
+        { value: 1.2,  label: "顶部区", color: "#ff4466" }
+    ],
+    "Mayer Multiple": [
+        { value: 1.0, label: "均值",     color: "#ffcc00" },
+        { value: 2.4, label: "历史高位", color: "#ff4466" }
+    ],
+    "恐惧贪婪指数": [
+        { value: 20, label: "极度恐惧", color: "#00ff88" },
+        { value: 80, label: "极度贪婪", color: "#ff4466" }
+    ]
+};
+
 /**
  * Render shimmer skeleton cards into indicator containers immediately on page load.
  */
@@ -1101,4 +1122,141 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 每 10 分钟自动刷新资讯/巨鲸/日历
     setInterval(fetchNewsData, NEWS_REFRESH_INTERVAL);
+});
+
+/* ============================================================
+   HISTORY DRAWER
+   ============================================================ */
+
+/**
+ * Open history drawer for the given indicator.
+ */
+async function openDrawer(name, indicator) {
+    currentDrawerIndicator = { name, indicator };
+
+    document.getElementById('drawerTitle').textContent = `${name} 历史走势`;
+    document.getElementById('drawerMeta').textContent =
+        `当前值: ${indicator.value !== null ? Number(indicator.value).toFixed(2) : '—'} · ${indicator.status || ''}`;
+
+    // Reset tabs to 30d default
+    document.querySelectorAll('.dtab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.days === '30');
+    });
+
+    document.getElementById('drawerOverlay').classList.add('visible');
+    document.getElementById('historyDrawer').classList.add('open');
+
+    await loadDrawerData(name, 30);
+}
+
+/**
+ * Fetch and render history data. Uses client-side cache.
+ */
+async function loadDrawerData(name, days) {
+    const cacheKey = `${name}:${days}`;
+
+    if (!historyCache[cacheKey]) {
+        try {
+            const res = await fetch(`/api/history/${encodeURIComponent(name)}?days=${days}`);
+            const data = await res.json();
+            historyCache[cacheKey] = (data.success && data.dates && data.dates.length > 0) ? data : null;
+        } catch (err) {
+            console.error(`History fetch failed for ${name}:`, err);
+            historyCache[cacheKey] = null;
+        }
+    }
+
+    renderDrawerChart(historyCache[cacheKey], name);
+}
+
+/**
+ * Render Chart.js line chart in the drawer canvas.
+ */
+function renderDrawerChart(data, indicatorName) {
+    const canvas = document.getElementById('drawerChart');
+    if (!canvas) return;
+
+    if (drawerChartInstance) {
+        drawerChartInstance.destroy();
+        drawerChartInstance = null;
+    }
+
+    if (!data || !data.dates || data.dates.length === 0) {
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        return;
+    }
+
+    const thresholdAnnotations = {};
+    const thresholds = INDICATOR_THRESHOLDS[indicatorName] || [];
+    thresholds.forEach((t, i) => {
+        thresholdAnnotations[`line${i}`] = {
+            type: 'line',
+            yMin: t.value,
+            yMax: t.value,
+            borderColor: t.color,
+            borderWidth: 1,
+            borderDash: [4, 3],
+            label: {
+                content: t.label,
+                display: true,
+                position: 'start',
+                color: t.color,
+                font: { size: 10 }
+            }
+        };
+    });
+
+    drawerChartInstance = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: data.dates,
+            datasets: [{
+                data: data.values,
+                borderColor: '#f7931a',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                fill: true,
+                backgroundColor: '#f7931a18',
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                annotation: { annotations: thresholdAnnotations }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#666', maxTicksLimit: 8, font: { size: 10 } },
+                    grid: { color: '#1e2535' }
+                },
+                y: {
+                    ticks: { color: '#666', font: { size: 10 } },
+                    grid: { color: '#1e2535' }
+                }
+            }
+        }
+    });
+}
+
+function closeDrawer() {
+    document.getElementById('historyDrawer').classList.remove('open');
+    document.getElementById('drawerOverlay').classList.remove('visible');
+}
+
+// Event listeners for drawer
+document.getElementById('drawerClose')?.addEventListener('click', closeDrawer);
+document.getElementById('drawerOverlay')?.addEventListener('click', closeDrawer);
+
+document.querySelectorAll('.dtab').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        document.querySelectorAll('.dtab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const days = parseInt(btn.dataset.days, 10);
+        if (currentDrawerIndicator) {
+            await loadDrawerData(currentDrawerIndicator.name, days);
+        }
+    });
 });
