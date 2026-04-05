@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTC 长期指标仪表盘</title>
+    <meta name="description" content="实时监控比特币长期指标，包括 Pi Cycle Top、减半周期、Ahr999、幂律走廊等核心指标">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Favicon -->
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=10">
+    <!-- Chart.js for history drawer -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>₿ BTC 长期指标仪表盘</h1>
+            <p class="subtitle">基于 P0/P1 核心指标的市场监控系统</p>
+            <p class="timestamp" id="timestamp">加载中...</p>
+        </header>
+
+        <!-- Main Content (always visible; skeletons show while loading) -->
+        <main id="mainContent">
+            <!-- Top Summary Bar (Key Metrics) -->
+            <section class="top-summary-bar" id="topSummaryBar">
+                <div class="summary-item primary">
+                    <span class="label">BTC 价格</span>
+                    <span class="value" id="summaryPrice">--</span>
+                    <span class="change neutral" id="summaryChange">--</span>
+                </div>
+                <div class="summary-item">
+                    <span class="label">全网算力</span>
+                    <span class="value" id="summaryHashrate">--</span>
+                </div>
+                <div class="summary-item">
+                    <span class="label">Ahr999</span>
+                    <span class="value" id="summaryAhr999">--</span>
+                </div>
+                <div class="summary-item">
+                    <span class="label">恐惧贪婪</span>
+                    <span class="value" id="summaryFearGreed">--</span>
+                </div>
+                <div class="summary-item">
+                    <span class="label">减半倒计时</span>
+                    <span class="value" id="summaryHalving">--</span>
+                </div>
+                <div class="summary-item">
+                    <span class="label">均衡价格</span>
+                    <span class="value" id="summaryBalanced">--</span>
+                </div>
+            </section>
+
+            <!-- 价格走势图 (New in V4.0) -->
+            <div class="chart-section"
+                style="margin: 20px 0; background: var(--card-bg); border-radius: 12px; padding: 15px; border: 1px solid var(--border-color);">
+                <div class="section-title" style="margin-bottom: 10px;">比特币价格走势 (BTC/USD · 多交易所综合)</div>
+                <!-- TradingView Widget BEGIN -->
+                <div class="tradingview-widget-container" style="width: 100%;">
+                    <div id="tradingview_b1e2c" style="height: 100%; width: 100%;"></div>
+                    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+                    <script type="text/javascript">
+                        new TradingView.widget(
+                            {
+                                "autosize": true,
+                                "symbol": "INDEX:BTCUSD",
+                                "interval": "D",
+                                "timezone": "Etc/UTC",
+                                "theme": "dark",
+                                "style": "1",
+                                "locale": "zh_CN",
+                                "enable_publishing": false,
+                                "allow_symbol_change": true,
+                                "container_id": "tradingview_b1e2c"
+                            }
+                        );
+                    </script>
+                </div>
+                <!-- TradingView Widget END -->
+            </div>
+
+            <!-- Score Gauge + Summary Table -->
+            <section class="gauge-section">
+                <div class="score-summary-container">
+                    <!-- Left: Gauge -->
+                    <div class="gauge-container">
+                        <h2 class="gauge-title">综合评分</h2>
+                        <div class="gauge">
+                            <div class="gauge-bg"></div>
+                            <div class="gauge-needle" id="gaugeNeedle"></div>
+                            <div class="gauge-center"></div>
+                        </div>
+                        <div class="gauge-labels">
+                            <span>-1 (卖出)</span>
+                            <span>0</span>
+                            <span>+1 (买入)</span>
+                        </div>
+                        <div class="score-value" id="scoreValue">--</div>
+                        <div class="recommendation yellow" id="recommendation">加载中...</div>
+
+                        <details class="score-explain">
+                            <summary class="score-explain-toggle">📖 评分说明</summary>
+                            <div class="score-explain-content">
+                                <div class="explain-section">
+                                    <h4>计算方式</h4>
+                                    <p>综合评分 = Σ(指标得分 × 权重) / Σ权重</p>
+                                    <p>每个指标得分范围 <b>-1</b>(极度看空) ~ <b>+1</b>(极度看多)</p>
+                                </div>
+                                <div class="explain-section">
+                                    <h4>区间划分</h4>
+                                    <table class="explain-table">
+                                        <tr>
+                                            <td class="range-cell green">≥ 0.8</td>
+                                            <td>强烈买入</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell green">0.4 ~ 0.8</td>
+                                            <td>买入</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell green-light">0.1 ~ 0.4</td>
+                                            <td>增持</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell yellow">-0.1 ~ 0.1</td>
+                                            <td>持有/观望</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell orange">-0.4 ~ -0.1</td>
+                                            <td>减仓</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell red">-0.8 ~ -0.4</td>
+                                            <td>卖出</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="range-cell red">≤ -0.8</td>
+                                            <td>清仓</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                                <div class="explain-section">
+                                    <h4>权重分配</h4>
+                                    <div class="weight-group">
+                                        <span class="weight-label">长期 (55%)</span>
+                                        <span class="weight-detail">Mayer 8% · Pi Cycle 7% · 减半 7% · Ahr999 7% · 幂律 7%
+                                            · 2Y-MA 6% · 200W 6% · 黄金比 7%</span>
+                                    </div>
+                                    <div class="weight-group">
+                                        <span class="weight-label">短期 (30%)</span>
+                                        <span class="weight-detail">RSI 5% · MACD 5% · 恐贪 5% · 布林带 4% · 资金费率 4% · 多空比 4%
+                                            · 最大痛点 3%</span>
+                                    </div>
+                                    <div class="weight-group">
+                                        <span class="weight-label">辅助 (15%)</span>
+                                        <span class="weight-detail">CDD 6% · 均衡价格 3% · 交易所余额 2% · ETF 1% · 市占率 1% · 算力
+                                            1%
+                                            · 公司持仓 1%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+
+                    <!-- Right: Summary Table -->
+                    <div class="summary-table-container">
+                        <h2 class="table-title">指标总览</h2>
+                        <div class="summary-tabs">
+                            <button class="summary-tab active" data-category="all">全部</button>
+                            <button class="summary-tab" data-category="P0">长期</button>
+                            <button class="summary-tab" data-category="P1">短期</button>
+                            <button class="summary-tab" data-category="P2">辅助</button>
+                        </div>
+                        <div class="summary-table-scroll">
+                            <table class="summary-table" id="summaryTable">
+                                <thead>
+                                    <tr>
+                                        <th>指标</th>
+                                        <th>数值</th>
+                                        <th>结论</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="summaryTableBody">
+                                    <!-- Dynamically populated -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Right: External Links -->
+                    <div class="ext-links-container">
+                        <h2 class="table-title">🔗 更多看板</h2>
+                        <div class="ext-links-list">
+                            <a href="https://content.biteye.info/btc" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">👁️</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">Biteye 抄底小助手</span>
+                                    <span class="ext-link-desc">BTC 抄底时机参考</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="https://btcdash-h668bzcr.manus.space/" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">📊</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">BTC Dashboard</span>
+                                    <span class="ext-link-desc">Manus AI 看板</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="https://crypto3d.pro/" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">🧊</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">Crypto3D 数据站</span>
+                                    <span class="ext-link-desc">AHR999 · MVRV · BTC.D</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="https://fuckbtc.com/" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">⛓️</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">BTC 链上看板</span>
+                                    <span class="ext-link-desc">关机币价 · 200WMA · MVRV</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="https://9992100.xyz/" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">📉</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">AHR999 实时</span>
+                                    <span class="ext-link-desc">AHR999 指数实时追踪</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="http://probs.fuckbtc.com/" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">🎲</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">BTC 价格概率分布</span>
+                                    <span class="ext-link-desc">预测市场推导的价格 PDF</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="https://defillama.com/chain/ethereum" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">🦙</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">DefiLlama Ethereum</span>
+                                    <span class="ext-link-desc">以太坊 DeFi TVL 数据看板</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+    </div>
+    </section>
+
+    <!-- 交易所BTC余额模块 -->
+    <section class="exchange-balance-section" style="margin-top: 30px;">
+        <h2 class="section-title">
+            <span class="icon">🏦</span>
+            交易所BTC余额
+            <span style="font-size: 0.75rem; color: #888; font-weight: normal; margin-left: 10px;">mempool.space
+                链上冷钱包余额监控</span>
+        </h2>
+        <div class="exchange-balance-card-standalone">
+            <div id="exchangeBalance">
+                <p style="color: #888;">加载中...</p>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- 资讯信息模块 (Moved up) -->
+    <section class="news-section" style="margin-top: 30px;">
+        <h2 class="section-title">
+            <span class="icon">📰</span>
+            BTC 资讯中心
+        </h2>
+        <div class="news-layout">
+
+            <!-- Left Column: Calendars & Whale (Stacked) -->
+            <div class="news-col-left">
+
+                <!-- 宏观经济日历 -->
+                <div class="news-card calendar-card">
+                    <h3 style="color: #f79322; margin-bottom: 15px; font-size: 1.1rem; flex-shrink: 0;">
+                        🏦 宏观经济日历
+                        <span style="font-size: 0.8rem; color: #888; font-weight: normal; margin-left: 10px;">
+                            CPI · 非农 · 利率决议
+                        </span>
+                    </h3>
+                    <div id="macroCalendar" class="news-list" style="flex: 1; overflow-y: auto;">
+                        <p style="color: #888;">加载中...</p>
+                    </div>
+                </div>
+
+                <!-- 巨鲸动态 -->
+                <div class="news-card whale-card">
+                    <h3 style="color: #f79322; margin-bottom: 10px; font-size: 1.1rem; flex-shrink: 0;">
+                        🐋 巨鲸动态
+                        <span
+                            style="font-size: 0.75rem; color: #888; font-weight: normal; display: block; margin-top: 3px;">Blockchain.com
+                            实时大额交易</span>
+                    </h3>
+                    <div id="whaleStats" class="whale-stats-container" style="flex-shrink: 0;">
+                        <!-- JS 动态填充 -->
+                    </div>
+                    <div id="whaleActivity" class="news-list" style="flex: 1; overflow-y: auto; padding-right: 8px;">
+                        <p style="color: #888;">加载中...</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right Column: BTC News Aggregation (Fixed 580px Height) -->
+            <div class="news-col-right">
+                <div class="news-card news-main-card">
+                    <h3 style="color: #f79322; margin-bottom: 15px; font-size: 1.1rem; flex-shrink: 0;">
+                        📰 BTC 资讯聚合
+                        <span style="font-size: 0.8rem; color: #888; font-weight: normal; margin-left: 10px;">
+                            CoinDesk · CoinTelegraph · Bitcoin Magazine · NewsBTC · 律动
+                        </span>
+                    </h3>
+                    <div id="cryptoNews" class="news-list" style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                        <p style="color: #888;">加载中...</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- 长期指标 (周期/定投参考) -->
+    <section class="indicators-section">
+        <h2 class="section-title">
+            <span class="icon">📊</span>
+            长期指标 (周期/定投参考)
+        </h2>
+        <div class="indicators-grid" id="longTermIndicators">
+            <!-- Dynamically populated -->
+        </div>
+    </section>
+
+    <!-- 短期指标 (交易参考) -->
+    <div class="priority-section">
+        <div class="section-title">📈 短期指标 (交易参考)</div>
+        <div class="cards-container" id="shortTermIndicators">
+            <!-- 由 JS 动态填充 -->
+        </div>
+    </div>
+
+    <!-- 辅助指标 -->
+    <div class="priority-section">
+        <div class="section-title">📋 辅助指标 (Optional)</div>
+        <div class="cards-container" id="auxIndicators">
+            <!-- 由 JS 动态填充 -->
+        </div>
+    </div>
+    <!-- ETH 收款地址 -->
+    <div
+        style="margin-top: 40px; padding: 20px; background: rgba(98, 126, 234, 0.08); border: 1px solid rgba(98, 126, 234, 0.25); border-radius: 12px; text-align: center;">
+        <p style="margin: 0 0 8px 0; font-size: 0.9rem; color: #888;">
+            ☕ 如果觉得有帮助，欢迎打赏 ETH
+        </p>
+        <code id="ethAddress"
+            style="display: inline-block; padding: 8px 16px; background: rgba(255,255,255,0.05); border-radius: 8px; font-size: 0.85rem; color: #627eea; letter-spacing: 0.3px; cursor: pointer; word-break: break-all; border: 1px solid rgba(98,126,234,0.2); transition: all 0.2s;"
+            onclick="navigator.clipboard.writeText('0x46f9ecf6256724bd37beeb8112c2765114301b8e').then(()=>{this.style.borderColor='#4ade80';this.style.color='#4ade80';this.textContent='✅ 已复制!';setTimeout(()=>{this.style.borderColor='';this.style.color='';this.textContent='0x46f9ecf6256724bd37beeb8112c2765114301b8e'},2000)})">0x46f9ecf6256724bd37beeb8112c2765114301b8e</code>
+        <p style="margin: 6px 0 0 0; font-size: 0.75rem; color: #666;">点击地址即可复制</p>
+    </div>
+
+    </main>
+    </div>
+
+    <!-- Refresh Button -->
+    <button class="refresh-btn" id="refreshBtn" title="刷新数据">🔄</button>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- Global Tooltip Container (Nuclear Option to bypass clipping) -->
+    <div id="global-tooltip" class="card-details-popover" style="position: fixed; z-index: 9999; display: none;"></div>
+
+    <script src="{{ url_for('static', filename='script.js') }}?v=10"></script>
+    <!-- History Drawer -->
+    <div id="historyDrawer" class="history-drawer">
+        <div class="drawer-header">
+            <div>
+                <span id="drawerTitle" class="drawer-title"></span>
+                <span id="drawerMeta" class="drawer-meta"></span>
+            </div>
+            <div class="drawer-controls">
+                <div class="drawer-tabs">
+                    <button class="dtab active" data-days="7">7天</button>
+                    <button class="dtab" data-days="30">30天</button>
+                    <button class="dtab" data-days="90">90天</button>
+                </div>
+                <button id="drawerClose" class="drawer-close">✕</button>
+            </div>
+        </div>
+        <div class="drawer-chart-container">
+            <canvas id="drawerChart"></canvas>
+        </div>
+    </div>
+    <div id="drawerOverlay" class="drawer-overlay"></div>
+</body>
+
+</html>
