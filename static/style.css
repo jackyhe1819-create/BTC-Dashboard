@@ -1151,12 +1151,13 @@ body::before {
     display: flex;
     flex-direction: column;
     gap: 20px;
-    height: 780px;
 }
 
 .news-col-right {
     flex: 2;
     min-width: 300px;
+    display: flex;
+    flex-direction: column;
 }
 
 .news-card {
@@ -1389,12 +1390,11 @@ body::before {
 }
 
 .whale-card {
-    flex: 1;
     min-height: 0;
 }
 
 .news-main-card {
-    height: 780px;
+    flex: 1;
 }
 
 /* News list scrollbar styles */
@@ -1833,6 +1833,15 @@ body::before {
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
+.card-v2-extlink {
+    font-size: 0.72rem;
+    color: #f7931a;
+    text-decoration: none;
+    opacity: 0.6;
+    margin-left: 4px;
+    transition: opacity 0.15s;
+}
+.card-v2-extlink:hover { opacity: 1; }
 .card-v2-badge {
     font-size: 0.68rem;
     padding: 2px 8px;
@@ -1869,6 +1878,41 @@ body::before {
     font-size: 0.62rem;
     color: #444;
     text-align: right;
+    margin-top: 4px;
+}
+
+/* ── 指标悬浮说明气泡 ── */
+#indicator-tooltip {
+    position: fixed;
+    z-index: 9999;
+    max-width: 300px;
+    background: #1a1f2e;
+    border: 1px solid #f7931a55;
+    border-radius: 10px;
+    padding: 12px 14px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: #ccc;
+}
+#indicator-tooltip.visible { opacity: 1; }
+#indicator-tooltip .tip-name {
+    font-size: 0.72rem;
+    color: #f7931a;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+#indicator-tooltip .tip-desc { margin-bottom: 6px; }
+#indicator-tooltip .tip-method {
+    color: #888;
+    font-size: 0.72rem;
+    border-top: 1px solid #2a3040;
+    padding-top: 6px;
     margin-top: 4px;
 }
 
@@ -1953,3 +1997,134 @@ body::before {
     z-index: 999;
 }
 .drawer-overlay.visible { display: block; }
+/* 调研资源模块 */
+.research-section { padding: 0 20px 40px; }
+
+.research-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.research-group {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 14px;
+}
+
+.research-group-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #f7931a;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.research-item {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 6px;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: background 0.15s;
+    border-bottom: 1px solid #222;
+}
+.research-item:last-child { border-bottom: none; }
+.research-item:hover { background: rgba(247,147,26,0.07); }
+
+.research-name {
+    font-size: 0.88rem;
+    color: #e0e0e0;
+    font-weight: 500;
+}
+
+.research-desc {
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: 2px;
+}
+
+/* Bitcoin 开发者动态模块 */
+.builders-section { padding: 0 20px; }
+
+.builders-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.builders-group {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+}
+
+.builders-group-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #ccc;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #2a2a2a;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.builders-badge {
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+    margin-left: auto;
+}
+.builders-badge.critical { background: rgba(247,147,26,0.18); color: #f7931a; }
+.builders-badge.high { background: rgba(100,160,255,0.15); color: #64a0ff; }
+
+.builders-items { display: flex; flex-direction: column; }
+
+.builders-item {
+    display: block;
+    padding: 8px 4px;
+    text-decoration: none;
+    border-bottom: 1px solid #222;
+    transition: background 0.15s;
+    border-radius: 4px;
+}
+.builders-item:last-child { border-bottom: none; }
+.builders-item:hover { background: rgba(247,147,26,0.06); }
+
+.builders-item-title {
+    font-size: 0.84rem;
+    color: #ddd;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.builders-item-summary {
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: 3px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.builders-item-date {
+    font-size: 0.7rem;
+    color: #555;
+    margin-top: 4px;
+}

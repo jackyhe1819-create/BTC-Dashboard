@@ -53,16 +53,64 @@ function renderSkeletons() {
 
 // 页面加载时获取数据
 document.addEventListener('DOMContentLoaded', () => {
-    renderSkeletons();       // Show skeletons immediately (0ms)
-    fetchDashboardData();    // Start fetching (~2s)
+    renderSkeletons();
+    fetchDashboardData();
     setInterval(fetchDashboardData, REFRESH_INTERVAL);
+    fetchBuildersData();
+    setInterval(fetchBuildersData, 30 * 60 * 1000); // 每 30 分钟刷新
 });
 
 // 刷新按钮点击事件（同时刷新指标和资讯）
 document.getElementById('refreshBtn')?.addEventListener('click', () => {
     fetchDashboardData();
     fetchNewsData();
+    fetchBuildersData();
 });
+
+async function fetchBuildersData() {
+    try {
+        const response = await fetch('/api/builders');
+        const data = await response.json();
+        if (!data.success) return;
+
+        const grid = document.getElementById('buildersGrid');
+        if (!grid) return;
+
+        const updatedEl = document.getElementById('buildersUpdatedAt');
+        if (updatedEl && data.updated_at) updatedEl.textContent = `更新于 ${data.updated_at}`;
+
+        if (!data.sources || data.sources.length === 0) {
+            grid.innerHTML = '<p style="color:#888;">暂无数据</p>';
+            return;
+        }
+
+        grid.innerHTML = data.sources.map(src => {
+            const items = (src.items || []).slice(0, 8);
+            const badge = src.priority === 'critical'
+                ? '<span class="builders-badge critical">核心</span>'
+                : '<span class="builders-badge high">重要</span>';
+            const itemsHtml = items.length > 0
+                ? items.map(item => `
+                    <a href="${item.url}" target="_blank" rel="noopener noreferrer" class="builders-item">
+                        <div class="builders-item-title">${item.title}</div>
+                        ${item.summary ? `<div class="builders-item-summary">${item.summary}</div>` : ''}
+                        ${item.date ? `<div class="builders-item-date">${item.date}</div>` : ''}
+                    </a>`).join('')
+                : `<p style="color:#666;font-size:0.82rem;padding:8px 0;">${src.error ? '加载失败' : '暂无内容'}</p>`;
+
+            return `
+                <div class="builders-group">
+                    <div class="builders-group-title">
+                        ${src.icon} ${src.name} ${badge}
+                    </div>
+                    <div class="builders-items">${itemsHtml}</div>
+                </div>`;
+        }).join('');
+
+    } catch (e) {
+        console.error('Builders feed error:', e);
+    }
+}
 
 /**
  * 获取仪表盘数据
@@ -126,6 +174,30 @@ function renderDashboard(data) {
 
     // 渲染指标总览表格
     renderSummaryTable(data.indicators);
+
+    // 更新 DAT 动态卡片中的 mNAV
+    renderDatMNAV(data.indicators['MSTR mNAV']);
+}
+
+function renderDatMNAV(ind) {
+    const el = document.getElementById('datMNAV');
+    if (!el) return;
+    if (!ind || ind.value === null) {
+        el.innerHTML = '<span style="color:#555;">MSTR mNAV 数据不可用</span>';
+        return;
+    }
+    const colorMap = { '🟢': '#00ff88', '🟡': '#ffcc00', '🟠': '#ff9800', '🔴': '#ff4466', '⚪': '#888' };
+    const c = colorMap[ind.color] || '#888';
+    el.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:#aaa;">MSTR mNAV</span>
+            <span style="color:${c}; font-size:1.1rem; font-weight:700;">${ind.value.toFixed(2)}×</span>
+        </div>
+        <div style="color:#666; font-size:0.72rem; margin-top:4px;">${ind.status}</div>
+        <a href="${ind.url}" target="_blank" rel="noopener noreferrer"
+           style="display:inline-block; margin-top:6px; font-size:0.7rem; color:#f7931a; opacity:0.7; text-decoration:none;">
+            ↗ SaylorTracker 查看详情
+        </a>`;
 }
 
 /**
@@ -461,9 +533,14 @@ function createIndicatorCardV2(indicator, sparklineValues) {
     const card = document.createElement('div');
     card.className = `indicator-card-v2 color-${colorKey}`;
 
+    const linkHtml = indicator.url
+        ? `<a href="${indicator.url}" target="_blank" rel="noopener noreferrer" class="card-v2-extlink" title="查看原始图表" onclick="event.stopPropagation()">↗</a>`
+        : '';
+
     card.innerHTML = `
         <div class="card-v2-header">
             <span class="card-v2-name">${indicator.name}</span>
+            ${linkHtml}
             <span class="card-v2-badge badge-${colorKey}">${badgeLabel}</span>
         </div>
         <div class="card-v2-value">${displayValue}</div>
@@ -480,7 +557,53 @@ function createIndicatorCardV2(indicator, sparklineValues) {
         if (typeof openDrawer === 'function') openDrawer(indicator.name, indicator);
     });
 
+    // Hover tooltip
+    if (indicator.description || indicator.method) {
+        card.addEventListener('mouseenter', (e) => {
+            showIndicatorTooltip(indicator, e);
+        });
+        card.addEventListener('mousemove', (e) => {
+            positionTooltip(e);
+        });
+        card.addEventListener('mouseleave', () => {
+            hideIndicatorTooltip();
+        });
+    }
+
     return card;
+}
+
+// ── 指标说明气泡 ────────────────────────────────────────────────
+const _tip = () => document.getElementById('indicator-tooltip');
+
+function showIndicatorTooltip(indicator, e) {
+    const el = _tip();
+    if (!el) return;
+    document.getElementById('tip-name').textContent  = indicator.name;
+    document.getElementById('tip-desc').textContent  = indicator.description || '';
+    document.getElementById('tip-method').textContent = indicator.method ? '📐 ' + indicator.method : '';
+    document.getElementById('tip-method').style.display = indicator.method ? '' : 'none';
+    el.classList.add('visible');
+    positionTooltip(e);
+}
+
+function hideIndicatorTooltip() {
+    const el = _tip();
+    if (el) el.classList.remove('visible');
+}
+
+function positionTooltip(e) {
+    const el = _tip();
+    if (!el) return;
+    const margin = 14;
+    const tw = el.offsetWidth  || 300;
+    const th = el.offsetHeight || 120;
+    let x = e.clientX + margin;
+    let y = e.clientY + margin;
+    if (x + tw > window.innerWidth)  x = e.clientX - tw - margin;
+    if (y + th > window.innerHeight) y = e.clientY - th - margin;
+    el.style.left = x + 'px';
+    el.style.top  = y + 'px';
 }
 
 /**
