@@ -8,9 +8,10 @@ Flask 后端服务，提供 API 接口返回 BTC 指标数据
 
 import sys
 import os
+import threading
 
-# 添加父目录到路径以导入 btc_dashboard
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 添加当前目录到路径以导入 btc_dashboard（btc_dashboard.py 与 app.py 同级）
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, render_template, jsonify, request
 from datetime import datetime
@@ -19,28 +20,82 @@ import numpy as np
 # 导入 dashboard 运行函数和历史数据函数
 from btc_dashboard import (
     run_dashboard, get_indicator_history, fetch_btc_data,
+    get_sparklines,
     fetch_crypto_news, fetch_whale_activity, fetch_macro_calendar,
-    fetch_crypto_calendar, fetch_whale_volume_stats, fetch_exchange_balance_display
+    fetch_crypto_calendar, fetch_whale_volume_stats, fetch_exchange_balance_display,
+    fetch_builders_feed
 )
 
 app = Flask(__name__)
 
-# 缓存 BTC 数据（避免每次请求都重新获取）
+# ── BTC 价格/指标缓存（5 分钟）──────────────────────────────────────
 _btc_data_cache = None
 _btc_data_timestamp = None
+
+# ── 资讯缓存（stale-while-revalidate，15 分钟 TTL）──────────────────
+_news_cache = None
+_news_cache_timestamp = None
+_news_refreshing = False          # 防止并发重复刷新
+_NEWS_TTL = 900                   # 15 分钟
+
+
+def _do_refresh_news():
+    """在后台线程中刷新资讯缓存。"""
+    global _news_cache, _news_cache_timestamp, _news_refreshing
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    try:
+        tasks = {
+            "news":             lambda: fetch_crypto_news(limit=100),
+            "whales":           lambda: fetch_whale_activity(min_btc=10, limit=50),
+            "whale_stats":      lambda: fetch_whale_volume_stats(),
+            "exchange_balance": lambda: fetch_exchange_balance_display(),
+            "calendar":         lambda: fetch_macro_calendar(),
+            "crypto_calendar":  lambda: fetch_crypto_calendar(),
+        }
+        results = {}
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {pool.submit(fn): key for key, fn in tasks.items()}
+            for future in as_completed(futures):
+                key = futures[future]
+                try:
+                    results[key] = future.result(timeout=30)
+                except Exception as e:
+                    print(f"⚠️ {key} 获取失败: {e}")
+                    results[key] = [] if key in ("news", "whales", "calendar", "crypto_calendar") else {}
+        _news_cache = results
+        _news_cache_timestamp = datetime.now()
+        print(f"✅ 资讯缓存刷新完成 {_news_cache_timestamp.strftime('%H:%M:%S')}")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+    finally:
+        _news_refreshing = False
+
+
+def trigger_news_refresh():
+    """触发后台刷新（若未在刷新中）。"""
+    global _news_refreshing
+    if not _news_refreshing:
+        _news_refreshing = True
+        t = threading.Thread(target=_do_refresh_news, daemon=True)
+        t.start()
 
 
 def get_cached_btc_data():
     """获取缓存的 BTC 数据"""
     global _btc_data_cache, _btc_data_timestamp
-    
+
     # 缓存 5 分钟
     if _btc_data_cache is None or _btc_data_timestamp is None or \
        (datetime.now() - _btc_data_timestamp).seconds > 300:
         _btc_data_cache = fetch_btc_data()
         _btc_data_timestamp = datetime.now()
-    
+
     return _btc_data_cache
+
+
+# ── 启动时预热缓存（非阻塞）────────────────────────────────────────
+trigger_news_refresh()
 
 
 @app.route('/')
@@ -54,7 +109,7 @@ def api_dashboard():
     """API 端点：返回仪表盘数据"""
     try:
         result = run_dashboard()
-        
+
         indicators_json = {}
         for name, ind in result.indicators.items():
             indicators_json[name] = {
@@ -68,16 +123,21 @@ def api_dashboard():
                 "description": ind.description,
                 "method": ind.method
             }
-        
+
+        # Get cached df for sparklines (reuses existing cache, zero extra API calls)
+        df = get_cached_btc_data()
+        sparklines = get_sparklines(df, result.indicators, days=7)
+
         return jsonify({
             "success": True,
             "timestamp": result.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
             "btc_price": float(result.btc_price),
             "total_score": float(result.total_score),
             "recommendation": result.recommendation,
-            "indicators": indicators_json
+            "indicators": indicators_json,
+            "sparklines": sparklines
         })
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -90,18 +150,18 @@ def api_history(indicator_name: str):
     try:
         days = request.args.get('days', 30, type=int)
         days = min(max(days, 7), 90)  # 限制 7-90 天
-        
+
         # 获取缓存的 BTC 数据
         df = get_cached_btc_data()
-        
+
         # 获取历史数据
         history = get_indicator_history(indicator_name, df, days)
-        
+
         return jsonify({
             "success": True,
             **history
         })
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -110,25 +170,51 @@ def api_history(indicator_name: str):
 
 @app.route('/api/news')
 def api_news():
-    """API 端点：返回资讯信息"""
-    try:
-        news = fetch_crypto_news(limit=20)
-        whales = fetch_whale_activity(min_btc=10, limit=50)
-        whale_stats = fetch_whale_volume_stats()
-        exchange_balance = fetch_exchange_balance_display()
-        calendar = fetch_macro_calendar()
-        crypto_calendar = fetch_crypto_calendar()
-        
+    """
+    API 端点：返回资讯信息
+    策略：stale-while-revalidate
+      - 有缓存 → 立即返回，若已过期则同时触发后台刷新
+      - 无缓存 → 同步等待首次刷新完成（仅冷启动时）
+    """
+    global _news_cache, _news_cache_timestamp
+
+    now = datetime.now()
+    cache_age = (now - _news_cache_timestamp).seconds if _news_cache_timestamp else None
+    has_cache = _news_cache is not None
+
+    if has_cache:
+        # 缓存过期 → 后台异步刷新，本次仍返回旧数据
+        if cache_age is not None and cache_age >= _NEWS_TTL:
+            trigger_news_refresh()
         return jsonify({
             "success": True,
-            "news": news,
-            "whales": whales,
-            "whale_stats": whale_stats,
-            "exchange_balance": exchange_balance,
-            "calendar": calendar,
-            "crypto_calendar": crypto_calendar
+            "cached": True,
+            "cache_age_s": cache_age,
+            **_news_cache
         })
-        
+
+    # 无缓存（冷启动场景）：等待后台刷新完成
+    # 先触发（若未在刷新中），然后轮询最多 35 秒
+    trigger_news_refresh()
+    import time
+    for _ in range(70):
+        time.sleep(0.5)
+        if _news_cache is not None:
+            return jsonify({
+                "success": True,
+                "cached": False,
+                "cache_age_s": 0,
+                **_news_cache
+            })
+    return jsonify({"success": False, "error": "资讯加载超时，请稍后刷新"}), 504
+
+
+@app.route('/api/builders')
+def api_builders():
+    """API 端点：返回 Bitcoin 开发者社区动态"""
+    try:
+        data = fetch_builders_feed(limit=30)
+        return jsonify({"success": True, **data})
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -142,5 +228,3 @@ if __name__ == '__main__':
     print(f"🚀 启动 BTC Dashboard Web 服务器 (port={port})...")
     print(f"📊 访问 http://localhost:{port} 查看仪表盘")
     app.run(debug=debug, use_reloader=False, host='0.0.0.0', port=port)
-
-

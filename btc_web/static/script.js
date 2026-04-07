@@ -7,27 +7,116 @@
 const REFRESH_INTERVAL = 5 * 60 * 1000; // 5分钟 (指标数据)
 const NEWS_REFRESH_INTERVAL = 10 * 60 * 1000; // 10分钟 (资讯/巨鲸/日历)
 
+// History drawer state
+const historyCache = {};        // { "Ahr999:30": {dates, values, thresholds} }
+let drawerChartInstance = null; // Chart.js instance
+let currentDrawerIndicator = null;
+
+// Threshold reference lines for key indicators
+const INDICATOR_THRESHOLDS = {
+    "Ahr999": [
+        { value: 0.45, label: "定投线", color: "#00ff88" },
+        { value: 1.2,  label: "顶部区", color: "#ff4466" }
+    ],
+    "Mayer Multiple": [
+        { value: 1.0, label: "均值",     color: "#ffcc00" },
+        { value: 2.4, label: "历史高位", color: "#ff4466" }
+    ],
+    "恐惧贪婪指数": [
+        { value: 20, label: "极度恐惧", color: "#00ff88" },
+        { value: 80, label: "极度贪婪", color: "#ff4466" }
+    ]
+};
+
+/**
+ * Render shimmer skeleton cards into indicator containers immediately on page load.
+ */
+function renderSkeletons() {
+    const counts = {
+        longTermIndicators:  8,
+        shortTermIndicators: 7,
+        auxIndicators:       7
+    };
+    for (const [id, count] of Object.entries(counts)) {
+        const container = document.getElementById(id);
+        if (!container) continue;
+        container.innerHTML = Array.from({ length: count }, () => `
+            <div class="indicator-skeleton">
+                <div class="skel skel-name"></div>
+                <div class="skel skel-value"></div>
+                <div class="skel skel-status"></div>
+                <div class="skel skel-chart"></div>
+            </div>
+        `).join('');
+    }
+}
+
 // 页面加载时获取数据
 document.addEventListener('DOMContentLoaded', () => {
+    renderSkeletons();
     fetchDashboardData();
-
-    // 设置自动刷新
     setInterval(fetchDashboardData, REFRESH_INTERVAL);
+    fetchBuildersData();
+    setInterval(fetchBuildersData, 30 * 60 * 1000); // 每 30 分钟刷新
 });
 
 // 刷新按钮点击事件（同时刷新指标和资讯）
 document.getElementById('refreshBtn')?.addEventListener('click', () => {
     fetchDashboardData();
     fetchNewsData();
+    fetchBuildersData();
 });
+
+async function fetchBuildersData() {
+    try {
+        const response = await fetch('/api/builders');
+        const data = await response.json();
+        if (!data.success) return;
+
+        const grid = document.getElementById('buildersGrid');
+        if (!grid) return;
+
+        const updatedEl = document.getElementById('buildersUpdatedAt');
+        if (updatedEl && data.updated_at) updatedEl.textContent = `更新于 ${data.updated_at}`;
+
+        if (!data.sources || data.sources.length === 0) {
+            grid.innerHTML = '<p style="color:#888;">暂无数据</p>';
+            return;
+        }
+
+        grid.innerHTML = data.sources.map(src => {
+            const items = (src.items || []).slice(0, 8);
+            const badge = src.priority === 'critical'
+                ? '<span class="builders-badge critical">核心</span>'
+                : '<span class="builders-badge high">重要</span>';
+            const itemsHtml = items.length > 0
+                ? items.map(item => `
+                    <a href="${item.url}" target="_blank" rel="noopener noreferrer" class="builders-item">
+                        <div class="builders-item-title">${item.title}</div>
+                        ${item.summary ? `<div class="builders-item-summary">${item.summary}</div>` : ''}
+                        ${item.date ? `<div class="builders-item-date">${item.date}</div>` : ''}
+                    </a>`).join('')
+                : `<p style="color:#666;font-size:0.82rem;padding:8px 0;">${src.error ? '加载失败' : '暂无内容'}</p>`;
+
+            return `
+                <div class="builders-group">
+                    <div class="builders-group-title">
+                        ${src.icon} ${src.name} ${badge}
+                    </div>
+                    <div class="builders-items">${itemsHtml}</div>
+                </div>`;
+        }).join('');
+
+    } catch (e) {
+        console.error('Builders feed error:', e);
+    }
+}
 
 /**
  * 获取仪表盘数据
  */
 async function fetchDashboardData() {
     const refreshBtn = document.getElementById('refreshBtn');
-    const mainContent = document.getElementById('mainContent');
-    const loadingEl = document.getElementById('loading');
 
     // 显示加载状态
     if (refreshBtn) {
@@ -40,8 +129,6 @@ async function fetchDashboardData() {
 
         if (data.success) {
             renderDashboard(data);
-            loadingEl.style.display = 'none';
-            mainContent.style.display = 'block';
         } else {
             showError(data.error || '获取数据失败');
         }
@@ -83,10 +170,34 @@ function renderDashboard(data) {
     recommendationEl.className = 'recommendation ' + getScoreColor(data.total_score);
 
     // 渲染指标
-    renderIndicators(data.indicators);
+    renderIndicators(data.indicators, data.sparklines);
 
     // 渲染指标总览表格
     renderSummaryTable(data.indicators);
+
+    // 更新 DAT 动态卡片中的 mNAV
+    renderDatMNAV(data.indicators['MSTR mNAV']);
+}
+
+function renderDatMNAV(ind) {
+    const el = document.getElementById('datMNAV');
+    if (!el) return;
+    if (!ind || ind.value === null) {
+        el.innerHTML = '<span style="color:#555;">MSTR mNAV 数据不可用</span>';
+        return;
+    }
+    const colorMap = { '🟢': '#00ff88', '🟡': '#ffcc00', '🟠': '#ff9800', '🔴': '#ff4466', '⚪': '#888' };
+    const c = colorMap[ind.color] || '#888';
+    el.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:#aaa;">MSTR mNAV</span>
+            <span style="color:${c}; font-size:1.1rem; font-weight:700;">${ind.value.toFixed(2)}×</span>
+        </div>
+        <div style="color:#666; font-size:0.72rem; margin-top:4px;">${ind.status}</div>
+        <a href="${ind.url}" target="_blank" rel="noopener noreferrer"
+           style="display:inline-block; margin-top:6px; font-size:0.7rem; color:#f7931a; opacity:0.7; text-decoration:none;">
+            ↗ SaylorTracker 查看详情
+        </a>`;
 }
 
 /**
@@ -333,20 +444,64 @@ function updateGauge(score) {
 }
 
 /**
- * 渲染指标卡片
+ * Render an inline SVG sparkline from an array of values.
  */
-function renderIndicators(indicators) {
-    const longTermContainer = document.getElementById('longTermIndicators');
-    const shortTermContainer = document.getElementById('shortTermIndicators');
-    const auxContainer = document.getElementById('auxIndicators');
+function renderSparkline(values, color) {
+    if (!values || values.length < 2) {
+        return '<svg class="card-v2-sparkline" viewBox="0 0 100 36"></svg>';
+    }
+    const w = 100, h = 36;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const pts = values.map((v, i) => {
+        const x = (i / (values.length - 1)) * w;
+        const y = h - ((v - min) / range) * (h - 6) - 3;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    const fillPts = `${pts} ${w},${h} 0,${h}`;
+    return `
+        <svg class="card-v2-sparkline" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+            <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round"/>
+            <polyline points="${fillPts}" fill="${color}18" stroke="none"/>
+        </svg>`;
+}
 
-    if (longTermContainer) longTermContainer.innerHTML = '';
+/**
+ * Return badge label text based on indicator color signal.
+ */
+function getBadgeLabel(color) {
+    if (color === '🟢') return '定投';
+    if (color === '🟡') return '观望';
+    if (color === '🔴') return '警戒';
+    return '持有';
+}
+
+/**
+ * Return CSS class suffix for indicator color.
+ */
+function getColorClass(color) {
+    if (color === '🟢') return 'green';
+    if (color === '🟡') return 'yellow';
+    if (color === '🔴') return 'red';
+    return 'yellow';
+}
+
+/**
+ * Render indicator cards using new v2 design with sparklines.
+ */
+function renderIndicators(indicators, sparklines) {
+    sparklines = sparklines || {};
+    const longTermContainer   = document.getElementById('longTermIndicators');
+    const shortTermContainer  = document.getElementById('shortTermIndicators');
+    const auxContainer        = document.getElementById('auxIndicators');
+
+    if (longTermContainer)  longTermContainer.innerHTML  = '';
     if (shortTermContainer) shortTermContainer.innerHTML = '';
-    if (auxContainer) auxContainer.innerHTML = '';
+    if (auxContainer)       auxContainer.innerHTML       = '';
 
     for (const [name, indicator] of Object.entries(indicators)) {
-        const card = createIndicatorCard(indicator);
-
+        const card = createIndicatorCardV2(indicator, sparklines[name] || []);
         if (indicator.priority === 'P0') {
             if (longTermContainer) longTermContainer.appendChild(card);
         } else if (indicator.priority === 'P1') {
@@ -355,6 +510,100 @@ function renderIndicators(indicators) {
             auxContainer.appendChild(card);
         }
     }
+}
+
+/**
+ * Create a new-style indicator card with color border, badge, score bar, sparkline.
+ */
+function createIndicatorCardV2(indicator, sparklineValues) {
+    const colorKey   = getColorClass(indicator.color);
+    const badgeLabel = getBadgeLabel(indicator.color);
+    const colorHex   = colorKey === 'green' ? '#00ff88'
+                     : colorKey === 'red'   ? '#ff4466'
+                     : '#ffcc00';
+
+    // Score bar width: map score (-1..+1) to 0..100%
+    const scoreWidth = Math.round(((indicator.score + 1) / 2) * 100);
+
+    // Format value
+    const displayValue = indicator.value !== null
+        ? (typeof indicator.value === 'number' ? indicator.value.toFixed(2) : indicator.value)
+        : '—';
+
+    const card = document.createElement('div');
+    card.className = `indicator-card-v2 color-${colorKey}`;
+
+    const linkHtml = indicator.url
+        ? `<a href="${indicator.url}" target="_blank" rel="noopener noreferrer" class="card-v2-extlink" title="查看原始图表" onclick="event.stopPropagation()">↗</a>`
+        : '';
+
+    card.innerHTML = `
+        <div class="card-v2-header">
+            <span class="card-v2-name">${indicator.name}</span>
+            ${linkHtml}
+            <span class="card-v2-badge badge-${colorKey}">${badgeLabel}</span>
+        </div>
+        <div class="card-v2-value">${displayValue}</div>
+        <div class="card-v2-status">${indicator.status || ''}</div>
+        <div class="card-v2-score-bar">
+            <div class="card-v2-score-fill" style="width:${scoreWidth}%;background:${colorHex}"></div>
+        </div>
+        ${renderSparkline(sparklineValues, colorHex)}
+        <div class="card-v2-hint">点击展开历史图 →</div>
+    `;
+
+    // Click → open history drawer (openDrawer defined in Task 6)
+    card.addEventListener('click', () => {
+        if (typeof openDrawer === 'function') openDrawer(indicator.name, indicator);
+    });
+
+    // Hover tooltip
+    if (indicator.description || indicator.method) {
+        card.addEventListener('mouseenter', (e) => {
+            showIndicatorTooltip(indicator, e);
+        });
+        card.addEventListener('mousemove', (e) => {
+            positionTooltip(e);
+        });
+        card.addEventListener('mouseleave', () => {
+            hideIndicatorTooltip();
+        });
+    }
+
+    return card;
+}
+
+// ── 指标说明气泡 ────────────────────────────────────────────────
+const _tip = () => document.getElementById('indicator-tooltip');
+
+function showIndicatorTooltip(indicator, e) {
+    const el = _tip();
+    if (!el) return;
+    document.getElementById('tip-name').textContent  = indicator.name;
+    document.getElementById('tip-desc').textContent  = indicator.description || '';
+    document.getElementById('tip-method').textContent = indicator.method ? '📐 ' + indicator.method : '';
+    document.getElementById('tip-method').style.display = indicator.method ? '' : 'none';
+    el.classList.add('visible');
+    positionTooltip(e);
+}
+
+function hideIndicatorTooltip() {
+    const el = _tip();
+    if (el) el.classList.remove('visible');
+}
+
+function positionTooltip(e) {
+    const el = _tip();
+    if (!el) return;
+    const margin = 14;
+    const tw = el.offsetWidth  || 300;
+    const th = el.offsetHeight || 120;
+    let x = e.clientX + margin;
+    let y = e.clientY + margin;
+    if (x + tw > window.innerWidth)  x = e.clientX - tw - margin;
+    if (y + th > window.innerHeight) y = e.clientY - th - margin;
+    el.style.left = x + 'px';
+    el.style.top  = y + 'px';
 }
 
 /**
@@ -996,4 +1245,141 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 每 10 分钟自动刷新资讯/巨鲸/日历
     setInterval(fetchNewsData, NEWS_REFRESH_INTERVAL);
+});
+
+/* ============================================================
+   HISTORY DRAWER
+   ============================================================ */
+
+/**
+ * Open history drawer for the given indicator.
+ */
+async function openDrawer(name, indicator) {
+    currentDrawerIndicator = { name, indicator };
+
+    document.getElementById('drawerTitle').textContent = `${name} 历史走势`;
+    document.getElementById('drawerMeta').textContent =
+        `当前值: ${indicator.value !== null ? Number(indicator.value).toFixed(2) : '—'} · ${indicator.status || ''}`;
+
+    // Reset tabs to 30d default
+    document.querySelectorAll('.dtab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.days === '30');
+    });
+
+    document.getElementById('drawerOverlay').classList.add('visible');
+    document.getElementById('historyDrawer').classList.add('open');
+
+    await loadDrawerData(name, 30);
+}
+
+/**
+ * Fetch and render history data. Uses client-side cache.
+ */
+async function loadDrawerData(name, days) {
+    const cacheKey = `${name}:${days}`;
+
+    if (!historyCache[cacheKey]) {
+        try {
+            const res = await fetch(`/api/history/${encodeURIComponent(name)}?days=${days}`);
+            const data = await res.json();
+            historyCache[cacheKey] = (data.success && data.dates && data.dates.length > 0) ? data : null;
+        } catch (err) {
+            console.error(`History fetch failed for ${name}:`, err);
+            historyCache[cacheKey] = null;
+        }
+    }
+
+    renderDrawerChart(historyCache[cacheKey], name);
+}
+
+/**
+ * Render Chart.js line chart in the drawer canvas.
+ */
+function renderDrawerChart(data, indicatorName) {
+    const canvas = document.getElementById('drawerChart');
+    if (!canvas) return;
+
+    if (drawerChartInstance) {
+        drawerChartInstance.destroy();
+        drawerChartInstance = null;
+    }
+
+    if (!data || !data.dates || data.dates.length === 0) {
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        return;
+    }
+
+    const thresholdAnnotations = {};
+    const thresholds = INDICATOR_THRESHOLDS[indicatorName] || [];
+    thresholds.forEach((t, i) => {
+        thresholdAnnotations[`line${i}`] = {
+            type: 'line',
+            yMin: t.value,
+            yMax: t.value,
+            borderColor: t.color,
+            borderWidth: 1,
+            borderDash: [4, 3],
+            label: {
+                content: t.label,
+                display: true,
+                position: 'start',
+                color: t.color,
+                font: { size: 10 }
+            }
+        };
+    });
+
+    drawerChartInstance = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: data.dates,
+            datasets: [{
+                data: data.values,
+                borderColor: '#f7931a',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                fill: true,
+                backgroundColor: '#f7931a18',
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                annotation: { annotations: thresholdAnnotations }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#666', maxTicksLimit: 8, font: { size: 10 } },
+                    grid: { color: '#1e2535' }
+                },
+                y: {
+                    ticks: { color: '#666', font: { size: 10 } },
+                    grid: { color: '#1e2535' }
+                }
+            }
+        }
+    });
+}
+
+function closeDrawer() {
+    document.getElementById('historyDrawer').classList.remove('open');
+    document.getElementById('drawerOverlay').classList.remove('visible');
+}
+
+// Event listeners for drawer
+document.getElementById('drawerClose')?.addEventListener('click', closeDrawer);
+document.getElementById('drawerOverlay')?.addEventListener('click', closeDrawer);
+
+document.querySelectorAll('.dtab').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        document.querySelectorAll('.dtab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const days = parseInt(btn.dataset.days, 10);
+        if (currentDrawerIndicator) {
+            await loadDrawerData(currentDrawerIndicator.name, days);
+        }
+    });
 });

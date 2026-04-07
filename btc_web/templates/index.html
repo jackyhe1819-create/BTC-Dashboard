@@ -16,10 +16,18 @@
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=10">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
+    <!-- Chart.js for history drawer -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 </head>
 
 <body>
+<div id="indicator-tooltip">
+    <div class="tip-name" id="tip-name"></div>
+    <div class="tip-desc" id="tip-desc"></div>
+    <div class="tip-method" id="tip-method"></div>
+</div>
     <div class="container">
         <!-- Header -->
         <header class="header">
@@ -28,14 +36,8 @@
             <p class="timestamp" id="timestamp">加载中...</p>
         </header>
 
-        <!-- Loading State -->
-        <div id="loading" class="loading">
-            <div class="loading-spinner"></div>
-            <p class="loading-text">正在获取 BTC 数据...</p>
-        </div>
-
-        <!-- Main Content (hidden until data loads) -->
-        <main id="mainContent" style="display: none;">
+        <!-- Main Content (always visible; skeletons show while loading) -->
+        <main id="mainContent">
             <!-- Top Summary Bar (Key Metrics) -->
             <section class="top-summary-bar" id="topSummaryBar">
                 <div class="summary-item primary">
@@ -261,6 +263,14 @@
                                 </div>
                                 <span class="ext-link-arrow">→</span>
                             </a>
+                            <a href="https://btc-bottom-dashboard.surf.computer/" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">🖥️</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">BTC Bottom Dashboard</span>
+                                    <span class="ext-link-desc">BTC 抄底综合看板</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -274,6 +284,10 @@
             交易所BTC余额
             <span style="font-size: 0.75rem; color: #888; font-weight: normal; margin-left: 10px;">mempool.space
                 链上冷钱包余额监控</span>
+            <a href="https://www.coinglass.com/zh/Balance" target="_blank" rel="noopener noreferrer"
+                style="font-size: 0.75rem; color: #f7931a; font-weight: normal; margin-left: 12px; text-decoration: none; border: 1px solid #f7931a33; padding: 2px 8px; border-radius: 4px;">
+                CoinGlass 交易所BTC余额 ↗
+            </a>
         </h2>
         <div class="exchange-balance-card-standalone">
             <div id="exchangeBalance">
@@ -302,7 +316,7 @@
                             CPI · 非农 · 利率决议
                         </span>
                     </h3>
-                    <div id="macroCalendar" class="news-list" style="flex: 1; overflow-y: auto;">
+                    <div id="macroCalendar" class="news-list" style="max-height: 260px; overflow-y: auto;">
                         <p style="color: #888;">加载中...</p>
                     </div>
                 </div>
@@ -318,8 +332,60 @@
                     <div id="whaleStats" class="whale-stats-container" style="flex-shrink: 0;">
                         <!-- JS 动态填充 -->
                     </div>
-                    <div id="whaleActivity" class="news-list" style="flex: 1; overflow-y: auto; padding-right: 8px;">
+                    <div id="whaleActivity" class="news-list" style="max-height: 300px; overflow-y: auto; padding-right: 8px;">
                         <p style="color: #888;">加载中...</p>
+                    </div>
+                </div>
+
+                <!-- ETF 动态 -->
+                <div class="news-card" style="margin-top: 16px;">
+                    <h3 style="color: #f79322; margin-bottom: 10px; font-size: 1.1rem;">
+                        📊 ETF 动态
+                        <a href="https://coinmarketcap.com/etf/" target="_blank" rel="noopener noreferrer"
+                            style="font-size: 0.75rem; color: #f7931a; font-weight: normal; margin-left: 10px; text-decoration: none; border: 1px solid #f7931a33; padding: 2px 8px; border-radius: 4px;">
+                            CoinMarketCap ↗
+                        </a>
+                    </h3>
+                    <p style="color: #888; font-size: 0.85rem; line-height: 1.6;">
+                        点击上方链接查看 BTC ETF 实时资金流入流出、AUM 规模及各产品详情。
+                    </p>
+                </div>
+
+                <!-- DAT 动态 -->
+                <div class="news-card" style="margin-top: 16px;">
+                    <h3 style="color: #f79322; margin-bottom: 12px; font-size: 1.1rem; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+                        🏦 DAT 动态
+                        <a href="https://bitcointreasuries.net/" target="_blank" rel="noopener noreferrer"
+                            style="font-size: 0.75rem; color: #f7931a; font-weight: normal; text-decoration: none; border: 1px solid #f7931a33; padding: 2px 8px; border-radius: 4px;">
+                            实时追踪 ↗
+                        </a>
+                        <a href="https://saylortracker.com/" target="_blank" rel="noopener noreferrer"
+                            style="font-size: 0.75rem; color: #aaa; font-weight: normal; text-decoration: none; border: 1px solid #ffffff22; padding: 2px 8px; border-radius: 4px;">
+                            Saylor ↗
+                        </a>
+                    </h3>
+                    <!-- 主要财库公司持仓表 -->
+                    <div style="font-size: 0.78rem; color: #bbb;">
+                        <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; align-items: center;">
+                            <!-- Header -->
+                            <span style="color: #555; font-size: 0.7rem; padding-bottom: 4px; border-bottom: 1px solid #2a3040;">公司</span>
+                            <span style="color: #555; font-size: 0.7rem; padding-bottom: 4px; border-bottom: 1px solid #2a3040; text-align: right;">持仓 (BTC)</span>
+                            <span style="color: #555; font-size: 0.7rem; padding-bottom: 4px; border-bottom: 1px solid #2a3040; text-align: right;">代码</span>
+                            <!-- Rows -->
+                            <span>Strategy (MicroStrategy)</span><span style="text-align:right; color:#f7931a;">568,840</span><span style="text-align:right; color:#555;">MSTR</span>
+                            <span>Marathon Digital</span><span style="text-align:right; color:#f7931a;">47,531</span><span style="text-align:right; color:#555;">MARA</span>
+                            <span>Riot Platforms</span><span style="text-align:right; color:#f7931a;">19,223</span><span style="text-align:right; color:#555;">RIOT</span>
+                            <span>Metaplanet</span><span style="text-align:right; color:#f7931a;">4,206</span><span style="text-align:right; color:#555;">3350.T</span>
+                            <span>Tesla</span><span style="text-align:right; color:#f7931a;">9,720</span><span style="text-align:right; color:#555;">TSLA</span>
+                            <span>CleanSpark</span><span style="text-align:right; color:#f7931a;">11,177</span><span style="text-align:right; color:#555;">CLSK</span>
+                        </div>
+                        <p style="margin: 10px 0 0; color: #444; font-size: 0.68rem; text-align: right;">
+                            数据近似，点击「实时追踪」查看最新增减仓动态
+                        </p>
+                    </div>
+                    <!-- mNAV 动态区 -->
+                    <div id="datMNAV" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #2a3040; font-size: 0.78rem; color: #888;">
+                        <span style="color:#555;">MSTR mNAV 加载中…</span>
                     </div>
                 </div>
 
@@ -329,12 +395,15 @@
             <div class="news-col-right">
                 <div class="news-card news-main-card">
                     <h3 style="color: #f79322; margin-bottom: 15px; font-size: 1.1rem; flex-shrink: 0;">
-                        📰 BTC 资讯聚合
+                        📰 Block 资讯聚合
                         <span style="font-size: 0.8rem; color: #888; font-weight: normal; margin-left: 10px;">
-                            CoinDesk · CoinTelegraph · Bitcoin Magazine · NewsBTC · 律动
+                            律动 BlockBeats
                         </span>
+                        <a href="https://www.theblockbeats.info/newsflash" target="_blank" rel="noopener noreferrer"
+                           style="font-size: 0.75rem; color: #f7931a; opacity: 0.7; margin-left: 10px; text-decoration: none; font-weight: normal;"
+                           title="在律动官网查看更多资讯">↗ 律动官网</a>
                     </h3>
-                    <div id="cryptoNews" class="news-list" style="flex: 1; overflow-y: auto; padding-right: 10px;">
+                    <div id="cryptoNews" class="news-list" style="flex: 1; min-height: 0; overflow-y: auto; padding-right: 10px;">
                         <p style="color: #888;">加载中...</p>
                     </div>
                 </div>
@@ -369,18 +438,6 @@
             <!-- 由 JS 动态填充 -->
         </div>
     </div>
-    <!-- ETH 收款地址 -->
-    <div
-        style="margin-top: 40px; padding: 20px; background: rgba(98, 126, 234, 0.08); border: 1px solid rgba(98, 126, 234, 0.25); border-radius: 12px; text-align: center;">
-        <p style="margin: 0 0 8px 0; font-size: 0.9rem; color: #888;">
-            ☕ 如果觉得有帮助，欢迎打赏 ETH
-        </p>
-        <code id="ethAddress"
-            style="display: inline-block; padding: 8px 16px; background: rgba(255,255,255,0.05); border-radius: 8px; font-size: 0.85rem; color: #627eea; letter-spacing: 0.3px; cursor: pointer; word-break: break-all; border: 1px solid rgba(98,126,234,0.2); transition: all 0.2s;"
-            onclick="navigator.clipboard.writeText('0x46f9ecf6256724bd37beeb8112c2765114301b8e').then(()=>{this.style.borderColor='#4ade80';this.style.color='#4ade80';this.textContent='✅ 已复制!';setTimeout(()=>{this.style.borderColor='';this.style.color='';this.textContent='0x46f9ecf6256724bd37beeb8112c2765114301b8e'},2000)})">0x46f9ecf6256724bd37beeb8112c2765114301b8e</code>
-        <p style="margin: 6px 0 0 0; font-size: 0.75rem; color: #666;">点击地址即可复制</p>
-    </div>
-
     </main>
     </div>
 
@@ -391,7 +448,228 @@
     <!-- Global Tooltip Container (Nuclear Option to bypass clipping) -->
     <div id="global-tooltip" class="card-details-popover" style="position: fixed; z-index: 9999; display: none;"></div>
 
-    <script src="{{ url_for('static', filename='script.js') }}?v=10"></script>
+    <!-- History Drawer (must be before script.js so event listeners bind correctly) -->
+    <div id="historyDrawer" class="history-drawer">
+        <div class="drawer-header">
+            <div>
+                <span id="drawerTitle" class="drawer-title"></span>
+                <span id="drawerMeta" class="drawer-meta"></span>
+            </div>
+            <div class="drawer-controls">
+                <div class="drawer-tabs">
+                    <button class="dtab active" data-days="7">7天</button>
+                    <button class="dtab" data-days="30">30天</button>
+                    <button class="dtab" data-days="90">90天</button>
+                </div>
+                <button id="drawerClose" class="drawer-close">✕</button>
+            </div>
+        </div>
+        <div class="drawer-chart-container">
+            <canvas id="drawerChart"></canvas>
+        </div>
+    </div>
+    <div id="drawerOverlay" class="drawer-overlay"></div>
+
+    <!-- Bitcoin 开发者动态模块 -->
+    <section class="builders-section" style="margin-top: 30px;">
+        <h2 class="section-title">
+            <span class="icon">⚙️</span>
+            Bitcoin 开发者动态
+            <span style="font-size: 0.75rem; color: #888; font-weight: normal; margin-left: 10px;">Optech · Delving Bitcoin · Dev Mailing List · Blockstream</span>
+            <span id="buildersUpdatedAt" style="font-size: 0.72rem; color: #555; font-weight: normal; margin-left: 12px;"></span>
+        </h2>
+        <div class="builders-grid" id="buildersGrid">
+            <p style="color: #888; font-size: 0.9rem;">加载中...</p>
+        </div>
+    </section>
+
+    <!-- 调研资源模块 -->
+    <section class="research-section" style="margin-top: 30px;">
+        <h2 class="section-title">
+            <span class="icon">🔬</span>
+            调研资源
+        </h2>
+        <div class="research-grid">
+
+            <!-- 链上数据 -->
+            <div class="research-group">
+                <div class="research-group-title">⛓️ 链上数据</div>
+                <a href="https://glassnode.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Glassnode</span>
+                    <span class="research-desc">专业链上指标平台</span>
+                </a>
+                <a href="https://cryptoquant.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">CryptoQuant</span>
+                    <span class="research-desc">交易所流量 · 矿工数据</span>
+                </a>
+                <a href="https://app.intotheblock.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">IntoTheBlock</span>
+                    <span class="research-desc">链上持仓分布分析</span>
+                </a>
+            </div>
+
+            <!-- 衍生品数据 -->
+            <div class="research-group">
+                <div class="research-group-title">📉 衍生品数据</div>
+                <a href="https://www.coinglass.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Coinglass</span>
+                    <span class="research-desc">期货持仓 · 清算 · 资金费率</span>
+                </a>
+                <a href="https://www.laevitas.ch/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Laevitas</span>
+                    <span class="research-desc">期权数据 · IV · 希腊值</span>
+                </a>
+                <a href="https://velodata.app/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Velo Data</span>
+                    <span class="research-desc">跨交易所衍生品流量</span>
+                </a>
+            </div>
+
+            <!-- 宏观 & 资金 -->
+            <div class="research-group">
+                <div class="research-group-title">🌍 宏观 & 资金</div>
+                <a href="https://tradingeconomics.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">TradingEconomics</span>
+                    <span class="research-desc">全球宏观经济指标</span>
+                </a>
+                <a href="https://www.federalreserve.gov/releases/h41/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Federal Reserve H.4.1</span>
+                    <span class="research-desc">美联储资产负债表</span>
+                </a>
+                <a href="https://tokenterminal.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Token Terminal</span>
+                    <span class="research-desc">协议收入 · P/E · 基本面</span>
+                </a>
+            </div>
+
+            <!-- 情绪 & 社区 -->
+            <div class="research-group">
+                <div class="research-group-title">💬 情绪 & 社区</div>
+                <a href="https://santiment.net/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Santiment</span>
+                    <span class="research-desc">社交情绪 · 开发活跃度</span>
+                </a>
+                <a href="https://lunarcrush.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">LunarCrush</span>
+                    <span class="research-desc">社交媒体信号监测</span>
+                </a>
+                <a href="https://alternative.me/crypto/fear-and-greed-index/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">恐贪指数</span>
+                    <span class="research-desc">Alternative.me 市场情绪</span>
+                </a>
+                <a href="https://6551.io/twitterMonitor" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">6551 Twitter Monitor</span>
+                    <span class="research-desc">加密推特实时监控</span>
+                </a>
+            </div>
+
+            <!-- 研究报告 -->
+            <div class="research-group">
+                <div class="research-group-title">📄 研究报告</div>
+                <a href="https://messari.io/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Messari</span>
+                    <span class="research-desc">加密研究报告 · 资产画像</span>
+                </a>
+                <a href="https://www.theblock.co/research" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">The Block Research</span>
+                    <span class="research-desc">机构级行业研究</span>
+                </a>
+                <a href="https://members.delphidigital.io/reports" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Delphi Digital</span>
+                    <span class="research-desc">深度市场研究报告</span>
+                </a>
+                <a href="https://www.blockecho.one/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">BlockEcho</span>
+                    <span class="research-desc">区块链研究与资讯</span>
+                </a>
+                <a href="https://content.biteye.info/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Biteye</span>
+                    <span class="research-desc">BTC 抄底时机参考</span>
+                </a>
+                <a href="https://winterresearch.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Winter Research</span>
+                    <span class="research-desc">加密市场深度研究</span>
+                </a>
+            </div>
+
+            <!-- 图表工具 -->
+            <div class="research-group">
+                <div class="research-group-title">🛠️ 图表工具</div>
+                <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">TradingView</span>
+                    <span class="research-desc">技术分析 · 自定义图表</span>
+                </a>
+                <a href="https://defillama.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">DefiLlama</span>
+                    <span class="research-desc">全链 DeFi TVL 追踪</span>
+                </a>
+                <a href="https://bitbo.io/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Bitbo</span>
+                    <span class="research-desc">BTC 实时指标综合面板</span>
+                </a>
+                <a href="https://invest-nav.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Invest Nav</span>
+                    <span class="research-desc">投资导航工具</span>
+                </a>
+            </div>
+
+            <!-- 英文媒体 -->
+            <div class="research-group">
+                <div class="research-group-title">🌐 英文媒体</div>
+                <a href="https://www.coindesk.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">CoinDesk</span>
+                    <span class="research-desc">加密行业权威英文媒体</span>
+                </a>
+                <a href="https://cointelegraph.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">CoinTelegraph</span>
+                    <span class="research-desc">全球最大加密新闻平台</span>
+                </a>
+                <a href="https://www.theblock.co/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">The Block</span>
+                    <span class="research-desc">加密市场深度报道与数据</span>
+                </a>
+                <a href="https://decrypt.co/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Decrypt</span>
+                    <span class="research-desc">Web3 与加密货币资讯</span>
+                </a>
+            </div>
+
+            <!-- 中文媒体 -->
+            <div class="research-group">
+                <div class="research-group-title">📰 中文媒体</div>
+                <a href="https://www.theblockbeats.info/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">区块律动 BlockBeats</span>
+                    <span class="research-desc">加密行业资讯与深度报道</span>
+                </a>
+                <a href="https://www.wublock123.com/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">吴说区块链</span>
+                    <span class="research-desc">加密行业独立媒体</span>
+                </a>
+                <a href="https://www.techflowpost.com/zh-CN" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">深潮 TechFlow</span>
+                    <span class="research-desc">Web3 资讯与投研内容</span>
+                </a>
+                <a href="https://foresightnews.pro/" target="_blank" rel="noopener noreferrer" class="research-item">
+                    <span class="research-name">Foresight News</span>
+                    <span class="research-desc">加密前沿资讯与分析</span>
+                </a>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- ETH 收款地址 -->
+    <div style="margin: 40px 20px 20px; padding: 20px; background: rgba(98, 126, 234, 0.08); border: 1px solid rgba(98, 126, 234, 0.25); border-radius: 12px; text-align: center;">
+        <p style="margin: 0 0 8px 0; font-size: 0.9rem; color: #888;">
+            ☕ 如果觉得有帮助，欢迎打赏 ETH
+        </p>
+        <code id="ethAddress"
+            style="display: inline-block; padding: 8px 16px; background: rgba(255,255,255,0.05); border-radius: 8px; font-size: 0.85rem; color: #627eea; letter-spacing: 0.3px; cursor: pointer; word-break: break-all; border: 1px solid rgba(98,126,234,0.2); transition: all 0.2s;"
+            onclick="navigator.clipboard.writeText('0x46f9ecf6256724bd37beeb8112c2765114301b8e').then(()=>{this.style.borderColor='#4ade80';this.style.color='#4ade80';this.textContent='✅ 已复制!';setTimeout(()=>{this.style.borderColor='';this.style.color='';this.textContent='0x46f9ecf6256724bd37beeb8112c2765114301b8e'},2000)})">0x46f9ecf6256724bd37beeb8112c2765114301b8e</code>
+        <p style="margin: 6px 0 0 0; font-size: 0.75rem; color: #666;">点击地址即可复制</p>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}?v=11"></script>
 </body>
 
 </html>

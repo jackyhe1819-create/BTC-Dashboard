@@ -1151,12 +1151,13 @@ body::before {
     display: flex;
     flex-direction: column;
     gap: 20px;
-    height: 780px;
 }
 
 .news-col-right {
     flex: 2;
     min-width: 300px;
+    display: flex;
+    flex-direction: column;
 }
 
 .news-card {
@@ -1389,12 +1390,11 @@ body::before {
 }
 
 .whale-card {
-    flex: 1;
     min-height: 0;
 }
 
 .news-main-card {
-    height: 780px;
+    flex: 1;
 }
 
 /* News list scrollbar styles */
@@ -1772,4 +1772,359 @@ body::before {
     .refresh-btn {
         bottom: calc(20px + env(safe-area-inset-bottom));
     }
+}
+
+/* ============================================================
+   SKELETON SCREEN
+   ============================================================ */
+.indicator-skeleton {
+    background: var(--card-bg, #1a1f2e);
+    border: 1px solid var(--border-color, #2a3040);
+    border-radius: 12px;
+    padding: 16px;
+    min-height: 140px;
+}
+.skel {
+    background: linear-gradient(90deg, #1e2535 25%, #252c3d 50%, #1e2535 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+}
+@keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+.skel-name   { height: 10px; width: 50%; margin-bottom: 12px; }
+.skel-value  { height: 28px; width: 65%; margin-bottom: 10px; }
+.skel-status { height: 10px; width: 80%; margin-bottom: 14px; }
+.skel-chart  { height: 36px; width: 100%; }
+
+/* ============================================================
+   NEW INDICATOR CARD v2
+   ============================================================ */
+.indicator-card-v2 {
+    background: var(--card-bg, #1a1f2e);
+    border: 1px solid var(--border-color, #2a3040);
+    border-left: 3px solid #444;
+    border-radius: 12px;
+    padding: 16px;
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.2s;
+    position: relative;
+    overflow: hidden;
+}
+.indicator-card-v2:hover {
+    border-color: #f7931a;
+    transform: translateY(-2px);
+}
+.indicator-card-v2.color-green  { border-left-color: #00ff88; }
+.indicator-card-v2.color-yellow { border-left-color: #ffcc00; }
+.indicator-card-v2.color-red    { border-left-color: #ff4466; }
+
+.card-v2-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 6px;
+}
+.card-v2-name {
+    font-size: 0.78rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.card-v2-extlink {
+    font-size: 0.72rem;
+    color: #f7931a;
+    text-decoration: none;
+    opacity: 0.6;
+    margin-left: 4px;
+    transition: opacity 0.15s;
+}
+.card-v2-extlink:hover { opacity: 1; }
+.card-v2-badge {
+    font-size: 0.68rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+.badge-green  { background: rgba(0,255,136,0.15); color: #00ff88; }
+.badge-yellow { background: rgba(255,204,0,0.15);  color: #ffcc00; }
+.badge-red    { background: rgba(255,68,102,0.15); color: #ff4466; }
+
+.card-v2-value  { font-size: 1.5rem; font-weight: 700; color: #fff; margin: 4px 0; }
+.card-v2-status { font-size: 0.78rem; color: #aaa; margin-bottom: 10px; }
+
+.card-v2-score-bar {
+    height: 3px;
+    background: #2a3040;
+    border-radius: 2px;
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+.card-v2-score-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s ease;
+}
+
+.card-v2-sparkline {
+    width: 100%;
+    height: 36px;
+    display: block;
+}
+
+.card-v2-hint {
+    font-size: 0.62rem;
+    color: #444;
+    text-align: right;
+    margin-top: 4px;
+}
+
+/* ── 指标悬浮说明气泡 ── */
+#indicator-tooltip {
+    position: fixed;
+    z-index: 9999;
+    max-width: 300px;
+    background: #1a1f2e;
+    border: 1px solid #f7931a55;
+    border-radius: 10px;
+    padding: 12px 14px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: #ccc;
+}
+#indicator-tooltip.visible { opacity: 1; }
+#indicator-tooltip .tip-name {
+    font-size: 0.72rem;
+    color: #f7931a;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+#indicator-tooltip .tip-desc { margin-bottom: 6px; }
+#indicator-tooltip .tip-method {
+    color: #888;
+    font-size: 0.72rem;
+    border-top: 1px solid #2a3040;
+    padding-top: 6px;
+    margin-top: 4px;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.indicator-card-v2 { animation: fadeIn 0.3s ease; }
+
+/* ============================================================
+   HISTORY DRAWER
+   ============================================================ */
+.history-drawer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #111827;
+    border-top: 2px solid #f7931a;
+    padding: 20px 24px 24px;
+    z-index: 1000;
+    transform: translateY(100%);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    max-height: 420px;
+}
+.history-drawer.open { transform: translateY(0); }
+
+.drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+.drawer-title { font-size: 1rem; font-weight: 700; color: #fff; }
+.drawer-meta  { font-size: 0.75rem; color: #888; margin-left: 10px; }
+
+.drawer-controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.drawer-tabs {
+    display: flex;
+    gap: 6px;
+}
+.dtab {
+    font-size: 0.72rem;
+    padding: 3px 12px;
+    border-radius: 12px;
+    border: 1px solid #2a3040;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.dtab.active {
+    background: rgba(247,147,26,0.15);
+    border-color: #f7931a;
+    color: #f7931a;
+}
+.drawer-close {
+    color: #555;
+    font-size: 1.2rem;
+    cursor: pointer;
+    background: none;
+    border: none;
+    line-height: 1;
+    padding: 0;
+}
+.drawer-close:hover { color: #fff; }
+
+.drawer-chart-container {
+    position: relative;
+    height: 240px;
+}
+
+.drawer-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 999;
+}
+.drawer-overlay.visible { display: block; }
+/* 调研资源模块 */
+.research-section { padding: 0 20px 40px; }
+
+.research-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.research-group {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 14px;
+}
+
+.research-group-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #f7931a;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.research-item {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 6px;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: background 0.15s;
+    border-bottom: 1px solid #222;
+}
+.research-item:last-child { border-bottom: none; }
+.research-item:hover { background: rgba(247,147,26,0.07); }
+
+.research-name {
+    font-size: 0.88rem;
+    color: #e0e0e0;
+    font-weight: 500;
+}
+
+.research-desc {
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: 2px;
+}
+
+/* Bitcoin 开发者动态模块 */
+.builders-section { padding: 0 20px; }
+
+.builders-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.builders-group {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+}
+
+.builders-group-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #ccc;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #2a2a2a;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.builders-badge {
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+    margin-left: auto;
+}
+.builders-badge.critical { background: rgba(247,147,26,0.18); color: #f7931a; }
+.builders-badge.high { background: rgba(100,160,255,0.15); color: #64a0ff; }
+
+.builders-items { display: flex; flex-direction: column; }
+
+.builders-item {
+    display: block;
+    padding: 8px 4px;
+    text-decoration: none;
+    border-bottom: 1px solid #222;
+    transition: background 0.15s;
+    border-radius: 4px;
+}
+.builders-item:last-child { border-bottom: none; }
+.builders-item:hover { background: rgba(247,147,26,0.06); }
+
+.builders-item-title {
+    font-size: 0.84rem;
+    color: #ddd;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.builders-item-summary {
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: 3px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.builders-item-date {
+    font-size: 0.7rem;
+    color: #555;
+    margin-top: 4px;
 }
