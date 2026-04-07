@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Tuple, Dict, Optional
 import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
 warnings.filterwarnings('ignore')
 
 
@@ -158,19 +159,43 @@ def fetch_btc_data(start_date: str = "2013-01-01", max_retries: int = 3) -> pd.D
             if attempt < max_retries - 1:
                 time.sleep(1)
     
-    # 方法2: CoinGecko API (获取最近365天数据，足够计算主要指标)
-    print("📡 尝试 CoinGecko API...")
+    # 方法2: CryptoCompare API (2000天，无地区限制，免费)
+    print("📡 尝试 CryptoCompare API (2000天)...")
+    try:
+        response = requests.get(
+            "https://min-api.cryptocompare.com/data/v2/histoday",
+            params={"fsym": "BTC", "tsym": "USD", "limit": 2000},
+            timeout=20
+        )
+        if response.status_code == 200:
+            data = response.json().get("Data", {}).get("Data", [])
+            if data:
+                import datetime as _dt
+                df = pd.DataFrame(data)
+                df["date"] = pd.to_datetime(df["time"], unit="s")
+                df.set_index("date", inplace=True)
+                df["price"] = df["close"].astype(float)
+                df = df[["price"]].dropna()
+                df = df[df["price"] > 0]
+                print(f"✅ CryptoCompare: 获取到 {len(df)} 条数据，最新日期: {df.index[-1].date()}")
+                return df
+        else:
+            print(f"⚠️ CryptoCompare API Error: Status {response.status_code}")
+    except Exception as e:
+        print(f"⚠️ CryptoCompare API 失败: {e}")
+
+    # 方法3: CoinGecko API (365天，免费接口支持)
+    print("📡 尝试 CoinGecko API (365天)...")
     try:
         response = requests.get(
             "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart",
-            params={"vs_currency": "usd", "days": "max", "interval": "daily"},
+            params={"vs_currency": "usd", "days": "365", "interval": "daily"},
+            headers={"Accept": "application/json"},
             timeout=30
         )
-        
         if response.status_code == 200:
             data = response.json()
             prices = data.get("prices", [])
-            
             if prices:
                 df = pd.DataFrame(prices, columns=["timestamp", "price"])
                 df["date"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -182,11 +207,34 @@ def fetch_btc_data(start_date: str = "2013-01-01", max_retries: int = 3) -> pd.D
             print(f"⚠️ CoinGecko API Error: Status {response.status_code}")
     except Exception as e:
         print(f"⚠️ CoinGecko API 失败: {e}")
-    
-    # 方法3: Binance Klines (Public API, Reliable)
+
+    # 方法3: Kraken OHLC (720天，无地区限制)
+    print("📡 尝试 Kraken API...")
+    try:
+        response = requests.get(
+            "https://api.kraken.com/0/public/OHLC",
+            params={"pair": "XBTUSD", "interval": 1440},
+            timeout=20
+        )
+        if response.status_code == 200:
+            data = response.json()
+            ohlc = data.get("result", {}).get("XXBTZUSD", [])
+            if ohlc:
+                df = pd.DataFrame(ohlc, columns=["time","open","high","low","close","vwap","volume","count"])
+                df["date"] = pd.to_datetime(df["time"].astype(int), unit="s")
+                df.set_index("date", inplace=True)
+                df["price"] = df["close"].astype(float)
+                df = df[["price"]]
+                print(f"✅ Kraken: 获取到 {len(df)} 条数据，最新日期: {df.index[-1].date()}")
+                return df
+        else:
+            print(f"⚠️ Kraken API Error: Status {response.status_code}")
+    except Exception as e:
+        print(f"⚠️ Kraken API 失败: {e}")
+
+    # 方法4: Binance Klines
     print("📡 尝试 Binance API (Klines)...")
     try:
-        # 获取最近 1000 天 (约3年) 数据
         response = requests.get(
             "https://api.binance.com/api/v3/klines",
             params={"symbol": "BTCUSDT", "interval": "1d", "limit": 1000},
@@ -194,15 +242,7 @@ def fetch_btc_data(start_date: str = "2013-01-01", max_retries: int = 3) -> pd.D
         )
         if response.status_code == 200:
             data = response.json()
-            # Binance format: [Open time, Open, High, Low, Close, Volume, ...]
-            # We need Close Price (Index 4) and Open Time (Index 0)
-            prices = []
-            for item in data:
-                prices.append({
-                    "timestamp": item[0],
-                    "price": float(item[4])
-                })
-            
+            prices = [{"timestamp": item[0], "price": float(item[4])} for item in data]
             df = pd.DataFrame(prices)
             df["date"] = pd.to_datetime(df["timestamp"], unit="ms")
             df.set_index("date", inplace=True)
@@ -214,7 +254,7 @@ def fetch_btc_data(start_date: str = "2013-01-01", max_retries: int = 3) -> pd.D
     except Exception as e:
         print(f"⚠️ Binance API 失败: {e}")
 
-    # 方法4: 所有来源都失败，使用示例数据
+    # 方法5: 所有来源都失败，使用示例数据
     print("⚠️ 无法获取实时数据，使用示例数据演示...")
     return generate_sample_data()
 
@@ -632,6 +672,7 @@ def calc_balanced_price(df: pd.DataFrame) -> IndicatorResult:
         color=color,
         status=status,
         priority="P1",
+        url="https://charts.bitbo.io/balanced-price/",
         description="均衡价格是衡量比特币公允价值的链上指标，通常被视为市场底部。",
         method="简化计算为150日均线和350日均线的平均值。价格低于均衡价格被认为是低估，高于则为高估。"
     )
@@ -681,6 +722,7 @@ def calc_halving_cycle() -> IndicatorResult:
         color=color,
         status=status,
         priority="P0",
+        url="https://www.coinglass.com/halving",
         description="比特币减半是其经济模型的核心事件，大约每四年发生一次，通常预示着牛市的到来。",
         method="根据比特币历史减半日期，计算当前所处的减半周期阶段。减半后12个月内通常是牛市早期，24个月后可能进入周期后期。"
     )
@@ -1390,23 +1432,23 @@ def calc_funding_rate() -> IndicatorResult:
     except Exception as e:
         print(f"⚠️ Binance Funding Rate failed: {e}")
 
-    # 2. Fallback: CoinGecko Derivatives (if Binance failed)
+    # 2. Fallback: OKX (无地区限制)
     if rate is None:
         try:
-            # print("⚠️ Binance blocked/failed, trying CoinGecko...")
-            cg_response = requests.get("https://api.coingecko.com/api/v3/derivatives", timeout=20)
-            if cg_response.status_code == 200:
-                cg_data = cg_response.json()
-                for item in cg_data:
-                    # Look for Binance Futures BTC/USDT
-                    if item.get('market') == 'Binance (Futures)' and item.get('symbol') == 'BTCUSDT':
-                        rate = float(item.get('funding_rate', 0)) * 100
-                        source = "CoinGecko"
-                        break
+            okx_resp = requests.get(
+                "https://www.okx.com/api/v5/public/funding-rate",
+                params={"instId": "BTC-USDT-SWAP"},
+                timeout=10
+            )
+            if okx_resp.status_code == 200:
+                okx_data = okx_resp.json()
+                if okx_data.get("code") == "0":
+                    rate = float(okx_data["data"][0]["fundingRate"]) * 100
+                    source = "OKX"
         except Exception as e:
-            print(f"⚠️ CoinGecko Fallback failed: {e}")
+            print(f"⚠️ OKX Funding Rate failed: {e}")
 
-    # 3. Fallback: Bybit (if Binance/CG failed)
+    # 3. Fallback: Bybit
     if rate is None:
         try:
             bybit_resp = requests.get(
@@ -1421,6 +1463,19 @@ def calc_funding_rate() -> IndicatorResult:
                     source = "Bybit"
         except Exception as e:
             print(f"⚠️ Bybit Fallback failed: {e}")
+
+    # 4. Fallback: CoinGecko Derivatives
+    if rate is None:
+        try:
+            cg_response = requests.get("https://api.coingecko.com/api/v3/derivatives", timeout=20)
+            if cg_response.status_code == 200:
+                for item in cg_response.json():
+                    if item.get('market') == 'Binance (Futures)' and item.get('symbol') == 'BTCUSDT':
+                        rate = float(item.get('funding_rate', 0)) * 100
+                        source = "CoinGecko"
+                        break
+        except Exception as e:
+            print(f"⚠️ CoinGecko Fallback failed: {e}")
 
     # 4. If all failed, return Error but with valid value to show card
     if rate is None:
@@ -1459,7 +1514,7 @@ def calc_funding_rate() -> IndicatorResult:
         color=color,
         status=status,
         priority="P1",
-        url="https://www.binance.com/zh-CN/futures/funding-rate",
+        url="https://www.coinglass.com/zh/funding-rate",
         description="资金费率是永续合约市场特有的机制，用于平衡多头和空头持仓。",
         method="正费率表示多头支付空头，市场偏多；负费率表示空头支付多头，市场偏空。极端费率可能预示市场反转。"
     )
@@ -1582,7 +1637,7 @@ def calc_btc_dominance() -> IndicatorResult:
                 color=color,
                 status=status,
                 priority="P2",
-                url="https://www.coingecko.com/zh/global_charts",
+                url="https://coinmarketcap.com/charts/bitcoin-dominance/",
                 description="比特币市值占加密货币总市值的比例，反映了比特币在市场中的主导地位。",
                 method="牛市初期，BTC市占率通常上涨（吸血效应）；牛市后期，随着资金流向山寨币，BTC市占率可能下降（山寨季）。"
             )
@@ -1595,7 +1650,8 @@ def calc_btc_dominance() -> IndicatorResult:
         score=0,
         color="⚪",
         status="API 暂不可用",
-        priority="P2"
+        priority="P2",
+        url="https://coinmarketcap.com/charts/bitcoin-dominance/"
     )
 
 def fetch_etf_volume() -> Tuple[float, float, str]:
@@ -1751,6 +1807,115 @@ def calc_etf_flow() -> IndicatorResult:
         method="通过聚合主要比特币现货ETF（如IBIT, FBTC, GBTC）的日交易量来衡量活跃度。高交易量和净流入通常被视为市场利好。"
     )
 
+
+
+def fetch_mstr_price():
+    """获取 Strategy (MSTR) 实时股价，多源回退"""
+    HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+
+    # 方法1: Stooq（无需 API key，通常可访问）
+    try:
+        resp = requests.get(
+            "https://stooq.com/q/l/?s=mstr.us&f=sd2t2ohlcv&h&e=csv",
+            timeout=8, headers=HEADERS
+        )
+        if resp.status_code == 200:
+            lines = resp.text.strip().split('\n')
+            if len(lines) >= 2:
+                parts = lines[1].split(',')
+                # 列顺序: Symbol,Date,Time,Open,High,Low,Close,Volume
+                close = float(parts[6]) if len(parts) > 6 else float(parts[4])
+                if close > 0:
+                    print(f"✅ MSTR 股价 via Stooq: ${close:.2f}")
+                    return close
+    except Exception as e:
+        print(f"⚠️ Stooq MSTR 失败: {e}")
+
+    # 方法2: Yahoo Finance v8
+    try:
+        resp = requests.get(
+            "https://query1.finance.yahoo.com/v8/finance/chart/MSTR?interval=1d&range=1d",
+            timeout=8, headers=HEADERS
+        )
+        if resp.status_code == 200:
+            price = resp.json()["chart"]["result"][0]["meta"]["regularMarketPrice"]
+            if price > 0:
+                print(f"✅ MSTR 股价 via Yahoo: ${price:.2f}")
+                return float(price)
+    except Exception as e:
+        print(f"⚠️ Yahoo MSTR 失败: {e}")
+
+    return None
+
+
+def calc_mnav() -> IndicatorResult:
+    """
+    MSTR mNAV — Strategy (MicroStrategy) 市净率溢价
+    mNAV = MSTR 股票总市值 / (持仓 BTC 数量 × BTC 价格)
+    - mNAV > 3 : 极高溢价，泡沫风险 🔴
+    - mNAV 2-3 : 高溢价，偏高估 🟠
+    - mNAV 1.5-2: 正常溢价 🟡
+    - mNAV 1-1.5: 低溢价，偏低估 🟢
+    - mNAV < 1  : 折价，极罕见机会 🟢
+    """
+    # MSTR 基础数据（随公告更新）
+    MSTR_BTC      = 568_840       # 持仓 BTC（截至 2026Q1）
+    MSTR_SHARES   = 246_000_000   # 流通股本（约）
+
+    # 获取 BTC 价格
+    btc_price = None
+    try:
+        r = requests.get(
+            "https://mempool.space/api/v1/prices", timeout=5,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        if r.status_code == 200:
+            btc_price = r.json().get("USD")
+    except:
+        pass
+
+    mstr_price = fetch_mstr_price()
+
+    _desc   = ("衡量 Strategy(MSTR) 股票市值相对其持有 BTC 净资产的溢价倍数。"
+               "溢价越高说明市场对 MSTR 杠杆 BTC 模式给予更高定价。历史区间 1×–3×。")
+    _method = (f"mNAV = MSTR市值({MSTR_SHARES/1e6:.0f}M股 × 股价) "
+               f"÷ ({MSTR_BTC:,} BTC × BTC价格)")
+
+    if btc_price is None or mstr_price is None:
+        return IndicatorResult(
+            name="MSTR mNAV",
+            value=float('nan'), score=0, color="⚪",
+            status=f"数据获取失败 (MSTR={'N/A' if mstr_price is None else f'${mstr_price:.0f}'})",
+            priority="P2",
+            url="https://saylortracker.com/",
+            description=_desc, method=_method
+        )
+
+    btc_nav = MSTR_BTC * btc_price
+    mkt_cap = MSTR_SHARES * mstr_price
+    mnav    = mkt_cap / btc_nav
+
+    if mnav < 1.0:
+        score, color, label = 1.0, "🟢", "折价 — 极罕见"
+    elif mnav < 1.5:
+        score, color, label = 0.5, "🟢", "低溢价 — 偏低估"
+    elif mnav < 2.0:
+        score, color, label = 0.0, "🟡", "正常溢价"
+    elif mnav < 3.0:
+        score, color, label = -0.5, "🟠", "高溢价 — 偏高估"
+    else:
+        score, color, label = -1.0, "🔴", "极高溢价 — 泡沫风险"
+
+    return IndicatorResult(
+        name="MSTR mNAV",
+        value=round(mnav, 2),
+        score=score, color=color,
+        status=(f"MSTR ${mstr_price:.1f} | BTC NAV ${btc_nav/1e9:.1f}B | "
+                f"{mnav:.2f}x {label}"),
+        priority="P2",
+        url="https://saylortracker.com/",
+        description=_desc, method=_method
+    )
 
 
 def calc_company_holdings() -> IndicatorResult:
@@ -1994,52 +2159,28 @@ def fetch_crypto_news(limit: int = 20) -> list:
             return translation_cache[text]
         
         try:
-            # 延迟导入翻译器
             if translator is None:
                 from deep_translator import GoogleTranslator
                 translator = GoogleTranslator(source='en', target='zh-CN')
-            
-            translated = translator.translate(text)
+            from concurrent.futures import ThreadPoolExecutor as _TP, TimeoutError as _TE
+            with _TP(max_workers=1) as _p:
+                future = _p.submit(translator.translate, text)
+                translated = future.result(timeout=3)
             translation_cache[text] = translated
             return translated
         except Exception as e:
-            print(f"⚠️ 翻译失败: {e}")
-            return text  # 翻译失败返回原文
+            return text  # 翻译超时或失败，返回原文
     
     news_list = []
     
     # RSS 源列表 (is_chinese 标记中文源，无需翻译)
     rss_feeds = [
         {
-            "name": "CoinDesk",
-            "url": "https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=xml",
-            "icon": "📰",
-            "is_chinese": False
-        },
-        {
-            "name": "CoinTelegraph",
-            "url": "https://cointelegraph.com/rss",
-            "icon": "📊",
-            "is_chinese": False
-        },
-        {
-            "name": "Bitcoin Magazine",
-            "url": "https://bitcoinmagazine.com/feed",
-            "icon": "₿",
-            "is_chinese": False
-        },
-        {
-            "name": "NewsBTC",
-            "url": "https://www.newsbtc.com/feed/",
-            "icon": "📈",
-            "is_chinese": False
-        },
-        {
             "name": "律动 BlockBeats",
             "url": "https://api.theblockbeats.news/v2/rss/newsflash",
             "icon": "🎵",
             "is_chinese": True
-        }
+        },
     ]
     
     def parse_rss_date(date_str: str) -> datetime:
@@ -2062,61 +2203,60 @@ def fetch_crypto_news(limit: int = 20) -> list:
         clean = re.sub(r'<[^>]+>', '', text or '')
         return clean[:150] + '...' if len(clean) > 150 else clean
     
-    # 从每个 RSS 源获取新闻
-    for feed in rss_feeds:
+    def fetch_one_feed(feed):
+        """抓取单个 RSS 源，返回 news_item 列表"""
+        items_out = []
         try:
-            response = requests.get(feed["url"], timeout=10, headers={
+            response = requests.get(feed["url"], timeout=5, headers={
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
             })
             if response.status_code != 200:
-                continue
-                
+                return items_out
             root = ET.fromstring(response.content)
-            
-            # 查找所有 item 元素
-            items = root.findall('.//item')[:5]  # 每个源取前5条
-            
-            for item in items:
+            for item in root.findall('.//item')[:limit]:
                 title = item.find('title')
                 link = item.find('link')
                 pub_date = item.find('pubDate')
                 description = item.find('description')
-                
-                if title is not None and link is not None:
-                    title_text = title.text or ""
-                    summary_text = clean_html(description.text if description is not None else "")
-                    
-                    # 英文源翻译成中文
-                    if not feed.get("is_chinese", False):
-                        title_text = translate_to_chinese(title_text)
-                        summary_text = translate_to_chinese(summary_text)
-                    
-                    news_item = {
-                        "title": title_text,
-                        "url": link.text or "",
-                        "source": feed["name"],
-                        "icon": feed["icon"],
-                        "summary": summary_text,
-                        "pub_date": parse_rss_date(pub_date.text if pub_date is not None else ""),
-                        "time": ""
-                    }
-                    # 格式化时间显示
-                    news_item["time"] = news_item["pub_date"].strftime("%m-%d %H:%M")
-                    news_list.append(news_item)
-                    
+                if title is None or link is None:
+                    continue
+                title_text = title.text or ""
+                summary_text = clean_html(description.text if description is not None else "")
+                # 英文源仅翻译标题（带 3 秒超时保护；摘要保留原文节省时间）
+                if not feed.get("is_chinese", False):
+                    title_text = translate_to_chinese(title_text)
+                pub = parse_rss_date(pub_date.text if pub_date is not None else "")
+                items_out.append({
+                    "title": title_text,
+                    "url": link.text or "",
+                    "source": feed["name"],
+                    "icon": feed["icon"],
+                    "summary": summary_text,
+                    "pub_date": pub,
+                    "time": pub.strftime("%m-%d %H:%M"),
+                })
         except Exception as e:
             print(f"⚠️ RSS {feed['name']} 失败: {e}")
-            continue
-    
+        return items_out
+
+    # 并行抓取所有 RSS 源（总超时 15 秒）
+    from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
+    with ThreadPoolExecutor(max_workers=len(rss_feeds)) as pool:
+        futures = {pool.submit(fetch_one_feed, feed): feed for feed in rss_feeds}
+        for future in _as_completed(futures, timeout=15):
+            try:
+                news_list.extend(future.result())
+            except Exception:
+                pass
+
     # 按发布时间排序（最新在前）
     news_list.sort(key=lambda x: x.get("pub_date", datetime.min), reverse=True)
-    
+
     # 移除 pub_date 对象（不可 JSON 序列化）
     for item in news_list:
-        if "pub_date" in item:
-            del item["pub_date"]
-    
-    return news_list[:limit]
+        item.pop("pub_date", None)
+
+    return news_list
 
 
 def fetch_exchange_balance_display() -> dict:
@@ -2200,7 +2340,7 @@ def fetch_exchange_balance_display() -> dict:
         # 第2步: 通过本地快照文件对比计算 24h/7d/30d 变化
         snapshot_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "btc_web", "exchange_balance_history.json")
         history = []
-        
+
         try:
             if os.path.exists(snapshot_file):
                 with open(snapshot_file, "r") as f:
@@ -2325,241 +2465,161 @@ def fetch_whale_volume_stats() -> dict:
 def fetch_whale_activity(min_btc: int = 10, limit: int = 50) -> list:
     """
     获取 BTC 鲸鱼/大额交易监控
-    - 主要数据源: Blockchain.com 最新区块中的已确认大额交易
-    - 补充数据源: Blockchain.com 未确认交易（内存池）
-    - 备用数据源: mempool.space 最新交易
-    - 最终后备: 模拟示例数据
+    - 主力数据源: mempool.space（国内可访问，响应快）
+      1. 最新区块已确认大额交易（/api/block/{hash}/txs）
+      2. 内存池最近未确认交易（/api/mempool/recent）
+    - 最终后备: 示例数据
     - 按时间排序，最新在前
     """
     whale_list = []
-    
-    # 获取当前 BTC 价格
-    btc_price = 100000
+    seen_hashes = set()
+
+    # 获取当前 BTC 价格（快速接口）
+    btc_price = 83000
     try:
         price_resp = requests.get(
-            "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
-            timeout=5
+            "https://mempool.space/api/v1/prices",
+            timeout=5,
+            headers={"User-Agent": "Mozilla/5.0"}
         )
         if price_resp.status_code == 200:
-            btc_price = price_resp.json().get("bitcoin", {}).get("usd", 100000)
+            btc_price = price_resp.json().get("USD", 83000)
     except:
         pass
-    
-    min_satoshi = min_btc * 100000000
-    
+
+    min_sat = min_btc * 100_000_000
+
     def classify_tx(btc_amount):
-        """判断交易类型"""
-        if btc_amount >= 1000:
-            return "🐋 巨鲸", "🐋"
-        elif btc_amount >= 500:
-            return "🔥 超大额", "🔥"
-        elif btc_amount >= 100:
-            return "💰 大额", "💰"
-        elif btc_amount >= 50:
-            return "📊 中额", "📊"
-        else:
-            return "💵 交易", "💵"
-    
-    def parse_tx(tx, source_label=""):
-        """解析交易数据并返回whale记录"""
-        total_out = sum(out.get("value", 0) for out in tx.get("out", []))
-        if total_out < min_satoshi:
-            return None
-        
-        btc_amount = total_out / 100000000
-        tx_time = tx.get("time", 0)
-        tx_hash = tx.get("hash", "")
-        
-        if tx_time:
-            tx_datetime = datetime.fromtimestamp(tx_time)
-            time_str = tx_datetime.strftime("%m-%d %H:%M")
-        else:
-            tx_time = datetime.now().timestamp()
-            time_str = "待确认"
-        
-        tx_type, icon = classify_tx(btc_amount)
-        if source_label:
-            tx_type = f"{tx_type}"
-        
-        return {
-            "amount": f"{btc_amount:,.2f} BTC",
-            "value_usd": f"${btc_amount * btc_price:,.0f}",
-            "hash": tx_hash[:10] + "...",
-            "full_hash": tx_hash,
-            "time": time_str,
-            "timestamp": tx_time,
-            "type": tx_type,
-            "icon": icon,
-            "url": f"https://www.blockchain.com/explorer/transactions/btc/{tx_hash}"
-        }
-    
-    seen_hashes = set()
-    
-    # 方法1: 从最新确认区块中获取大额交易（数据最丰富）
-    try:
-        # 获取最新区块信息
-        latest_resp = requests.get(
-            "https://blockchain.info/latestblock",
-            timeout=10,
-            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
-        )
-        
-        if latest_resp.status_code == 200:
-            latest_block = latest_resp.json()
-            block_hash = latest_block.get("hash", "")
-            
-            # 逐块扫描，最多扫描3个区块
-            blocks_scanned = 0
-            current_hash = block_hash
-            
-            while current_hash and blocks_scanned < 3 and len(whale_list) < limit:
-                try:
-                    block_resp = requests.get(
-                        f"https://blockchain.info/rawblock/{current_hash}",
-                        timeout=20,
-                        headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
-                    )
-                    
-                    if block_resp.status_code == 200:
-                        block_data = block_resp.json()
-                        block_txs = block_data.get("tx", [])
-                        prev_block = block_data.get("prev_block", "")
-                        
-                        for tx in block_txs:
-                            tx_hash = tx.get("hash", "")
-                            if tx_hash in seen_hashes:
-                                continue
-                            
-                            record = parse_tx(tx)
-                            if record:
-                                seen_hashes.add(tx_hash)
-                                whale_list.append(record)
-                                
-                                if len(whale_list) >= limit:
-                                    break
-                        
-                        current_hash = prev_block
-                        blocks_scanned += 1
-                    else:
-                        break
-                        
-                except Exception as e:
-                    print(f"⚠️ 区块 {blocks_scanned + 1} 获取失败: {e}")
+        if btc_amount >= 1000: return "🐋 巨鲸", "🐋"
+        if btc_amount >= 500:  return "🔥 超大额", "🔥"
+        if btc_amount >= 100:  return "💰 大额", "💰"
+        if btc_amount >= 50:   return "📊 中额", "📊"
+        return "💵 交易", "💵"
+
+    HEADERS = {"User-Agent": "Mozilla/5.0"}
+    from concurrent.futures import ThreadPoolExecutor as _TP, as_completed as _ac
+
+    def _fetch_confirmed():
+        """扫最新 2 个区块的前 25 笔交易"""
+        confirmed = []
+        try:
+            tip_resp = requests.get("https://mempool.space/api/blocks/tip/hash", timeout=5, headers=HEADERS)
+            if tip_resp.status_code != 200:
+                return confirmed
+            current_hash = tip_resp.text.strip()
+
+            for _ in range(2):
+                if not current_hash:
                     break
-                    
-    except Exception as e:
-        print(f"⚠️ Blockchain.com 区块 API 失败: {e}")
-    
-    # 方法2: 补充未确认交易（内存池中的大额交易）
-    if len(whale_list) < limit:
-        try:
-            response = requests.get(
-                "https://blockchain.info/unconfirmed-transactions?format=json",
-                timeout=10,
-                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                txs = data.get("txs", [])
-                
-                for tx in txs:
-                    tx_hash = tx.get("hash", "")
-                    if tx_hash in seen_hashes:
+                txs_resp = requests.get(
+                    f"https://mempool.space/api/block/{current_hash}/txs/0",
+                    timeout=8, headers=HEADERS
+                )
+                if txs_resp.status_code != 200:
+                    break
+                for tx in txs_resp.json():
+                    total_sat = sum(v.get("value", 0) for v in tx.get("vout", []))
+                    if total_sat < min_sat:
                         continue
-                    
-                    record = parse_tx(tx)
-                    if record:
-                        record["type"] = "⏳ " + record["type"].split(" ", 1)[-1]
-                        record["icon"] = "⏳"
-                        seen_hashes.add(tx_hash)
-                        whale_list.append(record)
-                        
-                        if len(whale_list) >= limit:
-                            break
-                            
+                    txid = tx.get("txid", "")
+                    btc_amt = total_sat / 1e8
+                    tx_type, icon = classify_tx(btc_amt)
+                    ts = tx.get("status", {}).get("block_time", 0) or datetime.now().timestamp()
+                    confirmed.append({
+                        "amount": f"{btc_amt:,.2f} BTC",
+                        "value_usd": f"${btc_amt * btc_price:,.0f}",
+                        "hash": txid[:10] + "...",
+                        "time": datetime.fromtimestamp(ts).strftime("%m-%d %H:%M"),
+                        "timestamp": ts,
+                        "type": tx_type, "icon": icon,
+                        "url": f"https://mempool.space/tx/{txid}"
+                    })
+                # 获取前一个区块 hash
+                blk_resp = requests.get(
+                    f"https://mempool.space/api/block/{current_hash}",
+                    timeout=5, headers=HEADERS
+                )
+                current_hash = blk_resp.json().get("previousblockhash", "") if blk_resp.status_code == 200 else ""
         except Exception as e:
-            print(f"⚠️ Blockchain.com 未确认交易 API 失败: {e}")
-    
-    # 方法3: 如果获取不足，使用 mempool.space API
-    if len(whale_list) < 3:
+            print(f"⚠️ 区块扫描: {e}")
+        return confirmed
+
+    def _fetch_mempool():
+        """内存池未确认大额交易"""
+        pending = []
         try:
-            response = requests.get(
-                "https://mempool.space/api/mempool/recent",
-                timeout=10
-            )
-            if response.status_code == 200:
-                txs = response.json()
-                for tx in txs[:200]:
-                    btc_amount = tx.get("value", 0) / 100000000
-                    if btc_amount >= min_btc:
-                        tx_hash = tx.get("txid", "")
-                        if tx_hash in seen_hashes:
-                            continue
-                        
-                        tx_type, icon = classify_tx(btc_amount)
-                        whale_list.append({
-                            "amount": f"{btc_amount:,.2f} BTC",
-                            "value_usd": f"${btc_amount * btc_price:,.0f}",
-                            "hash": tx_hash[:10] + "...",
-                            "full_hash": tx_hash,
-                            "time": "待确认",
-                            "timestamp": datetime.now().timestamp(),
-                            "type": f"⏳ {tx_type.split(' ', 1)[-1]}",
-                            "icon": "⏳",
-                            "url": f"https://mempool.space/tx/{tx_hash}"
-                        })
-                        seen_hashes.add(tx_hash)
-                        
-                        if len(whale_list) >= limit:
-                            break
+            resp = requests.get("https://mempool.space/api/mempool/recent", timeout=6, headers=HEADERS)
+            if resp.status_code == 200:
+                for tx in resp.json():
+                    total_sat = tx.get("value", 0)
+                    if total_sat < min_sat:
+                        continue
+                    txid = tx.get("txid", "")
+                    btc_amt = total_sat / 1e8
+                    tx_type, icon = classify_tx(btc_amt)
+                    pending.append({
+                        "amount": f"{btc_amt:,.2f} BTC",
+                        "value_usd": f"${btc_amt * btc_price:,.0f}",
+                        "hash": txid[:10] + "...",
+                        "time": "待确认",
+                        "timestamp": datetime.now().timestamp() - 1,
+                        "type": f"⏳ {tx_type.split(' ', 1)[-1]}",
+                        "icon": "⏳",
+                        "url": f"https://mempool.space/tx/{txid}"
+                    })
         except Exception as e:
-            print(f"⚠️ mempool.space API 失败: {e}")
-    
-    # 方法4: 如果仍然没有数据，显示示例/提示
+            print(f"⚠️ mempool/recent: {e}")
+        return pending
+
+    # 并行拉取已确认 + 未确认交易，总超时 12s
+    with _TP(max_workers=2) as pool:
+        f_confirmed = pool.submit(_fetch_confirmed)
+        f_pending   = pool.submit(_fetch_mempool)
+        for fut in _ac([f_confirmed, f_pending], timeout=12):
+            try:
+                for item in fut.result():
+                    if item["hash"] not in seen_hashes:
+                        seen_hashes.add(item["hash"])
+                        whale_list.append(item)
+            except Exception:
+                pass
+
+    # ── 方法3: 示例数据兜底 ──────────────────────────────────────────
     if len(whale_list) < 2:
         now = datetime.now()
-        sample_transactions = [
-            {"btc": 1250.50, "type": "🐋 巨鲸", "icon": "🐋", "mins_ago": 5},
-            {"btc": 520.25, "type": "🔥 超大额", "icon": "🔥", "mins_ago": 12},
-            {"btc": 180.80, "type": "💰 大额", "icon": "💰", "mins_ago": 18},
-            {"btc": 95.50, "type": "📊 中额", "icon": "📊", "mins_ago": 25},
-            {"btc": 45.20, "type": "💵 交易", "icon": "💵", "mins_ago": 32},
-        ]
-        
-        for sample in sample_transactions[:limit]:
-            tx_time = now - timedelta(minutes=sample["mins_ago"])
+        for sample in [
+            (1250.50, "🐋 巨鲸", "🐋", 5),
+            (520.25, "🔥 超大额", "🔥", 12),
+            (180.80, "💰 大额", "💰", 18),
+            (95.50, "📊 中额", "📊", 25),
+        ]:
+            btc_amt, tx_type, icon, mins_ago = sample
+            ts = (now - timedelta(minutes=mins_ago)).timestamp()
             whale_list.append({
-                "amount": f"{sample['btc']:,.2f} BTC",
-                "value_usd": f"${sample['btc'] * btc_price:,.0f}",
-                "hash": "示例数据...",
-                "full_hash": "",
-                "time": tx_time.strftime("%m-%d %H:%M"),
-                "timestamp": tx_time.timestamp(),
-                "type": sample["type"],
-                "icon": sample["icon"],
-                "url": "https://whale-alert.io/"
+                "amount": f"{btc_amt:,.2f} BTC",
+                "value_usd": f"${btc_amt * btc_price:,.0f}",
+                "hash": "示例...",
+                "time": (now - timedelta(minutes=mins_ago)).strftime("%m-%d %H:%M"),
+                "timestamp": ts,
+                "type": tx_type,
+                "icon": icon,
+                "url": "https://mempool.space"
             })
-    
-    # 按时间戳排序（最新在前）
+
+    # 按时间排序（最新在前），移除内部字段
     whale_list.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-    
-    # 移除 timestamp 字段
     for item in whale_list:
-        if "timestamp" in item:
-            del item["timestamp"]
-    
-    # 添加 Whale Alert 链接
+        item.pop("timestamp", None)
+
+    # 尾部追加外链
     whale_list.append({
-        "amount": "🔗 查看 Whale Alert",
-        "value_usd": "更多鲸鱼动态",
-        "hash": "",
-        "time": "",
-        "type": "链接",
-        "icon": "🔗",
-        "url": "https://whale-alert.io/"
+        "amount": "🔗 查看更多大额交易",
+        "value_usd": "mempool.space",
+        "hash": "", "time": "",
+        "type": "链接", "icon": "🔗",
+        "url": "https://mempool.space"
     })
-    
+
     return whale_list
 
 
@@ -3298,6 +3358,227 @@ def get_golden_ratio_history(df: pd.DataFrame, days: int = 365*2) -> dict:
     }
 
 
+def get_mayer_multiple_history(df: pd.DataFrame, days: int = 90) -> dict:
+    """Mayer Multiple 历史"""
+    work = df.copy()
+    work['ma200'] = work['price'].rolling(200).mean()
+    sliced = work.tail(days)
+    dates, values, prices, ma200_vals = [], [], [], []
+    for date, row in sliced.iterrows():
+        dates.append(date.strftime('%Y-%m-%d'))
+        prices.append(round(row['price'], 2))
+        m = round(row['price'] / row['ma200'], 4) if not pd.isna(row['ma200']) and row['ma200'] > 0 else None
+        values.append(m)
+        ma200_vals.append(round(row['ma200'], 2) if not pd.isna(row['ma200']) else None)
+    return {
+        "indicator": "Mayer Multiple",
+        "dates": dates, "values": values,
+        "lines": {"MA200": {"values": ma200_vals, "color": "#3b82f6"}},
+        "thresholds": {
+            "buy": {"value": 0.8, "color": "#22c55e", "label": "低估"},
+            "fair": {"value": 1.0, "color": "#6b7280", "label": "公允"},
+            "sell": {"value": 2.4, "color": "#ef4444", "label": "高估"},
+        }
+    }
+
+
+def get_power_law_history(df: pd.DataFrame, days: int = 90) -> dict:
+    """幂律走廊历史 (价格 vs 幂律中轨)"""
+    GENESIS = pd.Timestamp("2009-01-03")
+    work = df.copy()
+    sliced = work.tail(days)
+    dates, prices, mid_vals, low_vals = [], [], [], []
+    for date, row in sliced.iterrows():
+        d = (date - GENESIS).days
+        if d <= 0:
+            continue
+        mid = 10 ** (5.84 * np.log10(d) - 17.01)
+        low = mid * 0.42
+        dates.append(date.strftime('%Y-%m-%d'))
+        prices.append(round(row['price'], 2))
+        mid_vals.append(round(mid, 2))
+        low_vals.append(round(low, 2))
+    return {
+        "indicator": "幂律走廊",
+        "dates": dates, "values": prices,
+        "lines": {
+            "幂律中轨": {"values": mid_vals, "color": "#f59e0b"},
+            "幂律下轨": {"values": low_vals, "color": "#22c55e"},
+        },
+        "thresholds": {}
+    }
+
+
+def get_balanced_price_history(df: pd.DataFrame, days: int = 90) -> dict:
+    """均衡价格历史"""
+    work = df.copy()
+    work['ma150'] = work['price'].rolling(150).mean()
+    work['ma350'] = work['price'].rolling(350).mean()
+    work['balanced'] = (work['ma150'] + work['ma350']) / 2
+    sliced = work.tail(days)
+    dates, prices, balanced_vals = [], [], []
+    for date, row in sliced.iterrows():
+        dates.append(date.strftime('%Y-%m-%d'))
+        prices.append(round(row['price'], 2))
+        balanced_vals.append(round(row['balanced'], 2) if not pd.isna(row['balanced']) else None)
+    return {
+        "indicator": "均衡价格",
+        "dates": dates, "values": prices,
+        "lines": {"均衡价格": {"values": balanced_vals, "color": "#a78bfa"}},
+        "thresholds": {}
+    }
+
+
+def get_halving_cycle_history(days: int = 90) -> dict:
+    """减半周期历史（月份数随时间推移）"""
+    HALVINGS = [
+        datetime(2012, 11, 28), datetime(2016, 7, 9),
+        datetime(2020, 5, 11), datetime(2024, 4, 20),
+    ]
+    today = datetime.now()
+    dates, values = [], []
+    for i in range(days - 1, -1, -1):
+        day = today - __import__('datetime').timedelta(days=i)
+        last_halving = max((h for h in HALVINGS if h <= day), default=HALVINGS[0])
+        months = (day - last_halving).days / 30.44
+        dates.append(day.strftime('%Y-%m-%d'))
+        values.append(round(months, 1))
+    return {
+        "indicator": "减半周期",
+        "dates": dates, "values": values,
+        "thresholds": {
+            "phase1": {"value": 12, "color": "#22c55e", "label": "早期牛市"},
+            "phase2": {"value": 24, "color": "#eab308", "label": "中期"},
+            "phase3": {"value": 36, "color": "#ef4444", "label": "后期"},
+        }
+    }
+
+
+def get_rsi_history(df: pd.DataFrame, days: int = 90) -> dict:
+    """RSI(14) 历史"""
+    delta = df['price'].diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rsi = 100 - (100 / (1 + gain / loss))
+    sliced_rsi = rsi.tail(days)
+    sliced_df = df.tail(days)
+    dates = [d.strftime('%Y-%m-%d') for d in sliced_df.index]
+    values = [round(v, 2) if not pd.isna(v) else None for v in sliced_rsi.values]
+    return {
+        "indicator": "RSI(14)",
+        "dates": dates, "values": values,
+        "thresholds": {
+            "oversold": {"value": 30, "color": "#22c55e", "label": "超卖"},
+            "neutral":  {"value": 50, "color": "#6b7280", "label": "中性"},
+            "overbought": {"value": 70, "color": "#ef4444", "label": "超买"},
+        }
+    }
+
+
+def get_macd_history(df: pd.DataFrame, days: int = 90) -> dict:
+    """MACD 历史"""
+    ema12 = df['price'].ewm(span=12).mean()
+    ema26 = df['price'].ewm(span=26).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9).mean()
+    hist = macd - signal
+    s = df.tail(days)
+    dates = [d.strftime('%Y-%m-%d') for d in s.index]
+    idx = s.index
+    return {
+        "indicator": "MACD",
+        "dates": dates,
+        "values": [round(v, 2) if not pd.isna(v) else None for v in macd.loc[idx].values],
+        "lines": {
+            "Signal": {"values": [round(v, 2) if not pd.isna(v) else None for v in signal.loc[idx].values], "color": "#f59e0b"},
+            "Histogram": {"values": [round(v, 2) if not pd.isna(v) else None for v in hist.loc[idx].values], "color": "#a78bfa"},
+        },
+        "thresholds": {"zero": {"value": 0, "color": "#6b7280", "label": "零轴"}}
+    }
+
+
+def get_bb_history(df: pd.DataFrame, days: int = 90) -> dict:
+    """布林带历史（%B 值）"""
+    mid = df['price'].rolling(20).mean()
+    std = df['price'].rolling(20).std()
+    upper = mid + 2 * std
+    lower = mid - 2 * std
+    pct_b = (df['price'] - lower) / (upper - lower)
+    s = df.tail(days)
+    idx = s.index
+    dates = [d.strftime('%Y-%m-%d') for d in idx]
+    return {
+        "indicator": "布林带",
+        "dates": dates,
+        "values": [round(v, 4) if not pd.isna(v) else None for v in pct_b.loc[idx].values],
+        "thresholds": {
+            "oversold":  {"value": 0.0, "color": "#22c55e", "label": "下轨"},
+            "mid":       {"value": 0.5, "color": "#6b7280", "label": "中轨"},
+            "overbought":{"value": 1.0, "color": "#ef4444", "label": "上轨"},
+        }
+    }
+
+
+def get_funding_rate_history_okx(days: int = 30) -> dict:
+    """资金费率历史 - OKX（替代被封锁的 Binance）"""
+    try:
+        resp = requests.get(
+            "https://www.okx.com/api/v5/public/funding-rate-history",
+            params={"instId": "BTC-USDT-SWAP", "limit": min(days * 3, 100)},
+            timeout=15
+        )
+        if resp.status_code == 200 and resp.json().get("code") == "0":
+            raw = resp.json()["data"]
+            daily = {}
+            for item in raw:
+                date = datetime.fromtimestamp(int(item["fundingTime"]) / 1000).strftime('%Y-%m-%d')
+                rate = float(item["fundingRate"]) * 100
+                if date not in daily:
+                    daily[date] = rate
+            sorted_dates = sorted(daily.keys())[-days:]
+            return {
+                "indicator": "资金费率",
+                "dates": sorted_dates,
+                "values": [round(daily[d], 4) for d in sorted_dates],
+                "thresholds": {
+                    "negative": {"value": -0.03, "color": "#22c55e", "label": "偏空"},
+                    "neutral":  {"value": 0,     "color": "#6b7280", "label": "中性"},
+                    "positive": {"value": 0.03,  "color": "#eab308", "label": "偏多"},
+                    "extreme":  {"value": 0.1,   "color": "#ef4444", "label": "过热"},
+                }
+            }
+    except Exception as e:
+        print(f"⚠️ OKX Funding Rate History 失败: {e}")
+    return {"indicator": "资金费率", "dates": [], "values": [], "thresholds": {}}
+
+
+def get_hashrate_history(days: int = 30) -> dict:
+    """全网算力历史 - blockchain.info (单位 TH/s → EH/s)"""
+    try:
+        resp = requests.get(
+            "https://api.blockchain.info/charts/hash-rate",
+            params={"timespan": f"{max(days, 30)}days", "format": "json", "sampled": "true"},
+            timeout=15
+        )
+        if resp.status_code == 200:
+            pts = resp.json().get("values", [])[-days:]
+            dates = [datetime.fromtimestamp(p["x"]).strftime('%Y-%m-%d') for p in pts]
+            values = [round(p["y"] / 1e6, 2) for p in pts]  # TH/s → EH/s
+            return {
+                "indicator": "全网算力",
+                "dates": dates, "values": values,
+                "thresholds": {}
+            }
+    except Exception as e:
+        print(f"⚠️ Hashrate History 失败: {e}")
+    return {"indicator": "全网算力", "dates": [], "values": [], "thresholds": {}}
+
+
+def get_dominance_history(days: int = 30) -> dict:
+    """BTC市占率历史 - 需要付费 API，暂不支持"""
+    return {"indicator": "BTC市占率", "dates": [], "values": [], "thresholds": {}}
+
+
 def get_indicator_history(indicator_name: str, df: pd.DataFrame = None, days: int = 30) -> dict:
     """统一的历史数据获取入口"""
     if indicator_name == "Ahr999" and df is not None:
@@ -3305,18 +3586,35 @@ def get_indicator_history(indicator_name: str, df: pd.DataFrame = None, days: in
     elif indicator_name == "恐惧贪婪指数":
         return get_fear_greed_history(days)
     elif indicator_name == "资金费率":
-        return get_funding_rate_history(days)
+        return get_funding_rate_history_okx(days)
     elif indicator_name == "多空比":
         return get_long_short_history(days)
     elif indicator_name == "Pi Cycle Top" and df is not None:
         return get_pi_cycle_history(df, days)
-    # New Cycle Indicators
     elif indicator_name == "2-Year MA Mult" and df is not None:
         return get_two_year_ma_history(df, days)
     elif indicator_name == "200-Week Heatmap" and df is not None:
         return get_200w_heatmap_history(df, days)
     elif indicator_name == "Golden Ratio" and df is not None:
         return get_golden_ratio_history(df, days)
+    elif indicator_name == "Mayer Multiple" and df is not None:
+        return get_mayer_multiple_history(df, days)
+    elif indicator_name == "幂律走廊" and df is not None:
+        return get_power_law_history(df, days)
+    elif indicator_name == "均衡价格" and df is not None:
+        return get_balanced_price_history(df, days)
+    elif indicator_name == "减半周期":
+        return get_halving_cycle_history(days)
+    elif indicator_name == "RSI(14)" and df is not None:
+        return get_rsi_history(df, days)
+    elif indicator_name == "MACD" and df is not None:
+        return get_macd_history(df, days)
+    elif indicator_name == "布林带" and df is not None:
+        return get_bb_history(df, days)
+    elif indicator_name == "全网算力":
+        return get_hashrate_history(days)
+    elif indicator_name == "BTC市占率":
+        return get_dominance_history(days)
     else:
         return {"indicator": indicator_name, "dates": [], "values": [], "thresholds": {}}
 
@@ -3433,57 +3731,203 @@ def print_dashboard(result: DashboardResult):
 # 主函数
 # ============================================================
 
+def get_sparklines(df: pd.DataFrame, indicators: dict, days: int = 7) -> dict:
+    """
+    计算所有指标的最近 N 天迷你图数据，优先从 df 推导真实时序。
+    外部 API 类指标（无法从 df 推导）保留 score 重复值作 fallback。
+    """
+    sparklines = {}
+    recent = df.tail(days)
+    GENESIS = pd.Timestamp("2009-01-03")
+    HALVINGS = [
+        pd.Timestamp("2012-11-28"), pd.Timestamp("2016-07-09"),
+        pd.Timestamp("2020-05-11"), pd.Timestamp("2024-04-20"),
+    ]
+
+    # ── 预计算全局滚动序列（一次性，复用）──
+    ma14g  = df['price'].rolling(14).mean()
+    ma111  = df['price'].rolling(111).mean()
+    ma200  = df['price'].rolling(200).mean()
+    ma350  = df['price'].rolling(350).mean()
+    ma730  = df['price'].rolling(730).mean()
+    ma1400 = df['price'].rolling(1400).mean()
+    ma150  = df['price'].rolling(150).mean()
+
+    delta  = df['price'].diff()
+    gain   = delta.clip(lower=0).rolling(14).mean()
+    loss   = (-delta.clip(upper=0)).rolling(14).mean()
+    rsi_s  = 100 - (100 / (1 + gain / loss))
+
+    ema12  = df['price'].ewm(span=12).mean()
+    ema26  = df['price'].ewm(span=26).mean()
+    macd_s = ema12 - ema26
+
+    bb_mid = df['price'].rolling(20).mean()
+    bb_std = df['price'].rolling(20).std()
+    bb_upper = bb_mid + 2 * bb_std
+    bb_lower = bb_mid - 2 * bb_std
+    pct_b  = (df['price'] - bb_lower) / (bb_upper - bb_lower)
+
+    def _clean(series, idx, decimals=4):
+        vals = series.loc[idx].round(decimals).tolist()
+        return [None if (v != v or v is None) else v for v in vals]
+
+    for name in indicators:
+        try:
+            idx = recent.index
+
+            if name == "Ahr999":
+                dca_cost = np.exp(df['price'].tail(200).apply(np.log).mean())
+                vals = []
+                for ts, row in recent.iterrows():
+                    d = (ts - GENESIS).days
+                    if d > 0 and dca_cost > 0:
+                        fair = 10 ** (AHR999_B * np.log10(d) + AHR999_A)
+                        vals.append(round((row['price']/dca_cost)*(row['price']/fair), 4) if fair > 0 else None)
+                    else:
+                        vals.append(None)
+                sparklines[name] = [v for v in vals if v is not None]
+
+            elif name == "Mayer Multiple":
+                sparklines[name] = _clean(recent['price'] / ma200.loc[idx], idx, 3)
+
+            elif name == "RSI(14)":
+                sparklines[name] = _clean(rsi_s.loc[idx], idx, 1)
+
+            elif name == "MACD":
+                sparklines[name] = _clean(macd_s.loc[idx], idx, 2)
+
+            elif name == "布林带":
+                sparklines[name] = _clean(pct_b.loc[idx], idx, 4)
+
+            elif name == "Pi Cycle Top":
+                ma350x2 = ma350 * 2
+                gap_pct = ((ma350x2 - ma111) / ma350x2 * 100).loc[idx]
+                sparklines[name] = _clean(gap_pct, idx, 2)
+
+            elif name == "2-Year MA Mult":
+                # 价格 / MA730 倍数
+                mult = (recent['price'] / ma730.loc[idx])
+                sparklines[name] = _clean(mult, idx, 3)
+
+            elif name == "200-Week Heatmap":
+                # 价格偏离 MA1400 的百分比
+                pct = ((recent['price'] - ma1400.loc[idx]) / ma1400.loc[idx] * 100)
+                sparklines[name] = _clean(pct, idx, 2)
+
+            elif name == "Golden Ratio":
+                # 价格 / MA350 倍数
+                mult = (recent['price'] / ma350.loc[idx])
+                sparklines[name] = _clean(mult, idx, 3)
+
+            elif name == "幂律走廊":
+                vals = []
+                for ts, row in recent.iterrows():
+                    d = (ts - GENESIS).days
+                    if d > 0:
+                        fair = 10 ** (AHR999_B * np.log10(d) + AHR999_A)
+                        vals.append(round(row['price'] / fair, 4) if fair > 0 else None)
+                    else:
+                        vals.append(None)
+                sparklines[name] = [v for v in vals if v is not None]
+
+            elif name == "均衡价格":
+                balanced = (ma150 + ma350) / 2
+                ratio = (recent['price'] / balanced.loc[idx])
+                sparklines[name] = _clean(ratio, idx, 3)
+
+            elif name == "减半周期":
+                vals = []
+                for ts in idx:
+                    last_h = max((h for h in HALVINGS if h <= ts), default=HALVINGS[0])
+                    vals.append(round((ts - last_h).days / 30.44, 1))
+                sparklines[name] = vals
+
+            elif name == "恐惧贪婪指数":
+                h = get_fear_greed_history(days)
+                sparklines[name] = h.get("values", [])[-days:] or [indicators[name].score] * days
+
+            elif name == "资金费率":
+                h = get_funding_rate_history_okx(days)
+                sparklines[name] = h.get("values", [])[-days:] or [indicators[name].score] * days
+
+            elif name == "多空比":
+                h = get_long_short_history(days)
+                sparklines[name] = h.get("values", [])[-days:] or [indicators[name].score] * days
+
+            elif name == "全网算力":
+                h = get_hashrate_history(days)
+                sparklines[name] = h.get("values", [])[-days:] or [indicators[name].score] * days
+
+            else:
+                # 其余外部 API 类（ETF/公司持仓/交易所余额/市占率/最大痛点/长期持有者）
+                score = indicators[name].score if not np.isnan(indicators[name].value) else 0
+                sparklines[name] = [round(score, 2)] * days
+
+        except Exception as e:
+            print(f"⚠️ sparkline [{name}] 计算失败: {e}")
+            sparklines[name] = []
+
+    return sparklines
+
+
 def run_dashboard() -> DashboardResult:
-    """运行仪表盘分析"""
+    """运行仪表盘分析 — 并行版本"""
     # 获取历史数据（用于计算指标）
     df = fetch_btc_data()
-    
+
     # 优先使用实时价格 API，失败则回退到历史数据最新价格
     realtime_price = fetch_realtime_btc_price()
     if realtime_price is not None:
         current_price = realtime_price
-        # 更新 DataFrame 最新价格用于指标计算
         df.iloc[-1, df.columns.get_loc('price')] = current_price
     else:
         current_price = df['price'].iloc[-1]
         print("⚠️ 使用历史数据价格（非实时）")
-    
-    # 计算各指标
+
+    # 定义各指标计算任务 (name -> callable)
+    tasks = {
+        # 长期指标
+        "Mayer Multiple":      lambda: calc_mayer_multiple(df),
+        "Pi Cycle Top":        lambda: calc_pi_cycle(df),
+        "减半周期":             lambda: calc_halving_cycle(),
+        "Ahr999":              lambda: calc_ahr999(df),
+        "幂律走廊":             lambda: calc_power_law(df),
+        "2-Year MA Mult":      lambda: calc_two_year_ma_multiplier(df),
+        "200-Week Heatmap":    lambda: calc_200w_ma_heatmap(df),
+        "Golden Ratio":        lambda: calc_golden_ratio_multiplier(df),
+        # 短期指标
+        "RSI(14)":             lambda: calc_rsi(df),
+        "MACD":                lambda: calc_macd(df),
+        "布林带":               lambda: calc_bollinger_bands(df),
+        "恐惧贪婪指数":         lambda: calc_fear_greed_index(),
+        "资金费率":             lambda: calc_funding_rate(),
+        "多空比":               lambda: calc_long_short_ratio(),
+        "最大痛点":             lambda: calc_max_pain(),
+        # 辅助指标
+        "BTC市占率":            lambda: calc_btc_dominance(),
+        "ETF资金流":            lambda: calc_etf_flow(),
+        "MSTR mNAV":           lambda: calc_mnav(),
+        "公司持仓":             lambda: calc_company_holdings(),
+        "交易所余额":            lambda: calc_exchange_reserve(),
+        "全网算力":             lambda: calc_hashrate(),
+        "均衡价格":             lambda: calc_balanced_price(df),
+        "长期持有者(CDD)":      lambda: calc_lth_supply(),
+    }
+
     indicators = {}
-    
-    # 长期指标 (周期/定投参考)
-    indicators["Mayer Multiple"] = calc_mayer_multiple(df)
-    indicators["Pi Cycle Top"] = calc_pi_cycle(df)
-    indicators["减半周期"] = calc_halving_cycle()
-    indicators["Ahr999"] = calc_ahr999(df)
-    indicators["幂律走廊"] = calc_power_law(df)
-    indicators["2-Year MA Mult"] = calc_two_year_ma_multiplier(df)
-    indicators["200-Week Heatmap"] = calc_200w_ma_heatmap(df)
-    indicators["Golden Ratio"] = calc_golden_ratio_multiplier(df)
-    
-    # 短期指标 (交易参考)
-    indicators["RSI(14)"] = calc_rsi(df)
-    indicators["MACD"] = calc_macd(df)
-    indicators["布林带"] = calc_bollinger_bands(df)
-    indicators["恐惧贪婪指数"] = calc_fear_greed_index()
-    indicators["资金费率"] = calc_funding_rate()
-    indicators["多空比"] = calc_long_short_ratio()
-    indicators["最大痛点"] = calc_max_pain()
-    
-    # 辅助指标
-    indicators["BTC市占率"] = calc_btc_dominance()
-    indicators["ETF资金流"] = calc_etf_flow()
-    indicators["公司持仓"] = calc_company_holdings()
-    indicators["交易所余额"] = calc_exchange_reserve()
-    indicators["全网算力"] = calc_hashrate()
-    indicators["全网算力"] = calc_hashrate()
-    indicators["均衡价格"] = calc_balanced_price(df)
-    indicators["长期持有者(CDD)"] = calc_lth_supply()
-    
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        future_to_name = {executor.submit(fn): name for name, fn in tasks.items()}
+        for future in as_completed(future_to_name):
+            name = future_to_name[future]
+            try:
+                indicators[name] = future.result()
+            except Exception as e:
+                print(f"⚠️ 指标 [{name}] 计算失败: {e}")
+
     # 计算综合评分
     total_score, recommendation = calculate_total_score(indicators)
-    
-    # 构建结果
+
     result = DashboardResult(
         timestamp=datetime.now(),
         btc_price=current_price,
@@ -3491,7 +3935,99 @@ def run_dashboard() -> DashboardResult:
         total_score=total_score,
         recommendation=recommendation
     )
-    
+
+    return result
+
+
+def fetch_builders_feed(limit: int = 30) -> dict:
+    """获取 Bitcoin 开发者社区 RSS 动态"""
+    import feedparser as _fp
+    import time as _t
+
+    SOURCES = [
+        {
+            "key": "optech",
+            "name": "Bitcoin Optech",
+            "rss": "https://bitcoinops.org/feed.xml",
+            "icon": "📡",
+            "priority": "critical",
+        },
+        {
+            "key": "delving",
+            "name": "Delving Bitcoin",
+            "rss": "https://delvingbitcoin.org/latest.rss",
+            "icon": "🔍",
+            "priority": "critical",
+        },
+        {
+            "key": "devmail",
+            "name": "Bitcoin Dev Mailing List",
+            "rss": "https://gnusha.org/pi/bitcoindev/atom.xml",
+            "icon": "📬",
+            "priority": "high",
+        },
+        {
+            "key": "blockstream",
+            "name": "Blockstream Research",
+            "rss": "https://blog.blockstream.com/rss/",
+            "icon": "🔬",
+            "priority": "high",
+        },
+    ]
+
+    result = {"sources": [], "total": 0, "updated_at": ""}
+    all_items = []
+
+    for src in SOURCES:
+        try:
+            feed = _fp.parse(src["rss"])
+            items = []
+            for entry in feed.entries[:limit // len(SOURCES) + 2]:
+                # 统一时间格式
+                pub = ""
+                if hasattr(entry, "published_parsed") and entry.published_parsed:
+                    import datetime as _dt
+                    pub = _dt.datetime(*entry.published_parsed[:6]).strftime("%Y-%m-%d")
+                elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+                    import datetime as _dt
+                    pub = _dt.datetime(*entry.updated_parsed[:6]).strftime("%Y-%m-%d")
+
+                # 摘要截断
+                summary = ""
+                if hasattr(entry, "summary"):
+                    import re as _re
+                    summary = _re.sub(r"<[^>]+>", "", entry.summary or "")[:200].strip()
+
+                items.append({
+                    "title": entry.get("title", "").strip(),
+                    "url": entry.get("link", ""),
+                    "date": pub,
+                    "summary": summary,
+                })
+
+            result["sources"].append({
+                "key": src["key"],
+                "name": src["name"],
+                "icon": src["icon"],
+                "priority": src["priority"],
+                "items": items,
+                "count": len(items),
+            })
+            all_items.extend(items)
+        except Exception as e:
+            result["sources"].append({
+                "key": src["key"],
+                "name": src["name"],
+                "icon": src["icon"],
+                "priority": src["priority"],
+                "items": [],
+                "count": 0,
+                "error": str(e),
+            })
+
+    import datetime as _dt
+    result["total"] = len(all_items)
+    result["updated_at"] = _dt.datetime.now().strftime("%H:%M")
     return result
 
 
