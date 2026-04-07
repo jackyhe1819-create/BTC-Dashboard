@@ -10,8 +10,8 @@ import sys
 import os
 import threading
 
-# 添加父目录到路径以导入 btc_dashboard
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 添加当前目录到路径以导入 btc_dashboard（btc_dashboard.py 与 app.py 同级）
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, render_template, jsonify, request
 from datetime import datetime
