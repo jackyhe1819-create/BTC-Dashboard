@@ -94,8 +94,13 @@ def get_cached_btc_data():
     return _btc_data_cache
 
 
-# ── 启动时预热缓存（非阻塞）────────────────────────────────────────
-trigger_news_refresh()
+# ── 启动时预热缓存（延迟 5s，避免启动瞬间内存峰值）──────────────────
+def _delayed_warmup():
+    import time as _t
+    _t.sleep(5)
+    trigger_news_refresh()
+
+threading.Thread(target=_delayed_warmup, daemon=True).start()
 
 
 @app.route('/')
