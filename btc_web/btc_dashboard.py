@@ -21,6 +21,7 @@ import requests
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Tuple, Dict, Optional
+from functools import lru_cache
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 warnings.filterwarnings('ignore')
@@ -1012,7 +1013,7 @@ def calc_rsi(df: pd.DataFrame, period: int = 14) -> IndicatorResult:
                 else:
                     neutral_count += 1
                 total_score += result_weekly["score"]
-    except:
+    except Exception:
         pass
     
     # 月线重采样
@@ -1029,7 +1030,7 @@ def calc_rsi(df: pd.DataFrame, period: int = 14) -> IndicatorResult:
                 else:
                     neutral_count += 1
                 total_score += result_monthly["score"]
-    except:
+    except Exception:
         pass
     
     # 年线重采样
@@ -1046,7 +1047,7 @@ def calc_rsi(df: pd.DataFrame, period: int = 14) -> IndicatorResult:
                 else:
                     neutral_count += 1
                 total_score += result_yearly["score"]
-    except:
+    except Exception:
         pass
     
     # 生成汇总状态
@@ -1216,7 +1217,7 @@ def calc_macd(df: pd.DataFrame) -> IndicatorResult:
         weekly_prices = df_indexed['price'].resample('W').last().dropna()
         if len(weekly_prices) >= 35:
             add_result("周线", calculate_single_macd(weekly_prices))
-    except:
+    except Exception:
         pass
     
     # 月线重采样
@@ -1224,7 +1225,7 @@ def calc_macd(df: pd.DataFrame) -> IndicatorResult:
         monthly_prices = df_indexed['price'].resample('ME').last().dropna()
         if len(monthly_prices) >= 35:
             add_result("月线", calculate_single_macd(monthly_prices))
-    except:
+    except Exception:
         pass
     
     # 生成汇总状态
@@ -2043,7 +2044,7 @@ def calc_exchange_reserve() -> IndicatorResult:
                     history = json.load(f)
                 if history:
                     prev_total = history[-1].get("total", None)
-        except:
+        except Exception:
             pass
         
         # 保存当前快照
@@ -2063,9 +2064,9 @@ def calc_exchange_reserve() -> IndicatorResult:
             
             with open(snapshot_file, "w") as f:
                 json.dump(history, f, indent=2)
-        except:
+        except Exception:
             pass
-        
+
         # 评分逻辑
         total_k = total_btc / 1000
         
@@ -2133,6 +2134,23 @@ def calc_exchange_reserve() -> IndicatorResult:
 # 资讯信息模块
 # ============================================================
 
+# 模块级翻译缓存（最多缓存 500 条，避免无限增长）
+_translator_instance = None
+
+@lru_cache(maxsize=500)
+def _cached_translate(text: str) -> str:
+    """带 LRU 缓存的翻译函数"""
+    global _translator_instance
+    try:
+        if _translator_instance is None:
+            from deep_translator import GoogleTranslator
+            _translator_instance = GoogleTranslator(source='en', target='zh-CN')
+        return _translator_instance.translate(text)
+    except Exception as e:
+        print(f"⚠️ 翻译失败: {e}")
+        return text
+
+
 def fetch_crypto_news(limit: int = 20) -> list:
     """
     获取 BTC 相关新闻 - 从多个 RSS 源聚合
@@ -2144,20 +2162,16 @@ def fetch_crypto_news(limit: int = 20) -> list:
     from datetime import datetime
     import re
     
-    # 翻译功能
-    translator = None
-    translation_cache = {}
-    
+    # 翻译功能（使用模块级 LRU 缓存，跨调用复用翻译结果）
     def translate_to_chinese(text: str) -> str:
         """将英文翻译成中文"""
-        nonlocal translator
         if not text or len(text.strip()) == 0:
             return text
-        
+
         # 检查缓存
         if text in translation_cache:
             return translation_cache[text]
-        
+
         try:
             if translator is None:
                 from deep_translator import GoogleTranslator
@@ -2194,7 +2208,7 @@ def fetch_crypto_news(limit: int = 20) -> list:
         for fmt in formats:
             try:
                 return datetime.strptime(date_str.strip(), fmt)
-            except:
+            except (ValueError, TypeError):
                 continue
         return datetime.now()
     
@@ -2322,7 +2336,7 @@ def fetch_exchange_balance_display() -> dict:
                         result["fetched"] += 1
                     elif resp.status_code == 429:
                         break
-                except:
+                except Exception:
                     pass
                 _time.sleep(0.3)
             
@@ -2345,7 +2359,7 @@ def fetch_exchange_balance_display() -> dict:
             if os.path.exists(snapshot_file):
                 with open(snapshot_file, "r") as f:
                     history = json.load(f)
-        except:
+        except (FileNotFoundError, json.JSONDecodeError, Exception):
             history = []
         
         if history and total_btc > 0:
@@ -2371,7 +2385,7 @@ def fetch_exchange_balance_display() -> dict:
                         if diff <= max_drift and (best_diff is None or diff < best_diff):
                             best_snap = snap
                             best_diff = diff
-                    except:
+                    except Exception:
                         continue
                 
                 if best_snap and best_snap.get("total", 0) > 0:
@@ -2396,7 +2410,7 @@ def fetch_exchange_balance_display() -> dict:
                 history = history[-720:]
                 with open(snapshot_file, "w") as f:
                     json.dump(history, f, indent=2)
-            except:
+            except Exception:
                 pass
         
     except Exception as e:
@@ -2474,18 +2488,10 @@ def fetch_whale_activity(min_btc: int = 10, limit: int = 50) -> list:
     whale_list = []
     seen_hashes = set()
 
-    # 获取当前 BTC 价格（快速接口）
-    btc_price = 83000
-    try:
-        price_resp = requests.get(
-            "https://mempool.space/api/v1/prices",
-            timeout=5,
-            headers={"User-Agent": "Mozilla/5.0"}
-        )
-        if price_resp.status_code == 200:
-            btc_price = price_resp.json().get("USD", 83000)
-    except:
-        pass
+    # 获取当前 BTC 价格（复用多源实时价格函数）
+    btc_price = fetch_realtime_btc_price()
+    if btc_price is None:
+        btc_price = 83000  # 所有 API 均失败时的最终后备
 
     min_sat = min_btc * 100_000_000
 
@@ -2866,7 +2872,7 @@ def fetch_macro_calendar() -> list:
                 beijing_tz = timezone(timedelta(hours=8))
                 event_time_beijing = event_time.astimezone(beijing_tz)
                 display_date = event_time_beijing.strftime("%m-%d %H:%M")
-            except:
+            except (ValueError, TypeError, AttributeError):
                 display_date = date_str[:16] if len(date_str) > 16 else date_str
             
             # 判断事件是否已经过去（已公布）
@@ -2876,7 +2882,7 @@ def fetch_macro_calendar() -> list:
                 beijing_tz_check = timezone(timedelta(hours=8))
                 now_beijing = datetime.now(beijing_tz_check)
                 is_past = event_dt < now_beijing
-            except:
+            except (ValueError, TypeError):
                 pass
             
             # 构建数据结果字符串
@@ -3916,14 +3922,50 @@ def run_dashboard() -> DashboardResult:
     }
 
     indicators = {}
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        future_to_name = {executor.submit(fn): name for name, fn in tasks.items()}
+
+    # === 第一步：快速计算本地 DataFrame 指标（纯计算，无网络IO） ===
+    indicators["Mayer Multiple"] = calc_mayer_multiple(df)
+    indicators["Pi Cycle Top"] = calc_pi_cycle(df)
+    indicators["减半周期"] = calc_halving_cycle()
+    indicators["Ahr999"] = calc_ahr999(df)
+    indicators["幂律走廊"] = calc_power_law(df)
+    indicators["2-Year MA Mult"] = calc_two_year_ma_multiplier(df)
+    indicators["200-Week Heatmap"] = calc_200w_ma_heatmap(df)
+    indicators["Golden Ratio"] = calc_golden_ratio_multiplier(df)
+    indicators["RSI(14)"] = calc_rsi(df)
+    indicators["MACD"] = calc_macd(df)
+    indicators["布林带"] = calc_bollinger_bands(df)
+    indicators["均衡价格"] = calc_balanced_price(df)
+
+    # === 第二步：并发执行网络 API 调用（IO密集，并行加速） ===
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    api_tasks = {
+        "恐惧贪婪指数": calc_fear_greed_index,
+        "资金费率": calc_funding_rate,
+        "多空比": calc_long_short_ratio,
+        "最大痛点": calc_max_pain,
+        "BTC市占率": calc_btc_dominance,
+        "ETF资金流": calc_etf_flow,
+        "公司持仓": calc_company_holdings,
+        "交易所余额": calc_exchange_reserve,
+        "全网算力": calc_hashrate,
+        "长期持有者(CDD)": calc_lth_supply,
+    }
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        future_to_name = {executor.submit(fn): name for name, fn in api_tasks.items()}
         for future in as_completed(future_to_name):
             name = future_to_name[future]
             try:
-                indicators[name] = future.result()
+                indicators[name] = future.result(timeout=30)
             except Exception as e:
-                print(f"⚠️ 指标 [{name}] 计算失败: {e}")
+                print(f"⚠️ 指标 {name} 计算失败: {e}")
+                indicators[name] = IndicatorResult(
+                    name=name, value=float('nan'), score=0,
+                    color="gray", status="数据获取失败",
+                    priority="辅助", url="", description="", method=""
+                )
 
     # 计算综合评分
     total_score, recommendation = calculate_total_score(indicators)
