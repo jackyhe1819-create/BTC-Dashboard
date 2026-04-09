@@ -32,11 +32,67 @@ app = Flask(__name__)
 _btc_data_cache = None
 _btc_data_timestamp = None
 
+# ── 仪表盘缓存（stale-while-revalidate，5 分钟 TTL）─────────────────
+_dashboard_cache = None
+_dashboard_cache_timestamp = None
+_dashboard_refreshing = False
+_DASHBOARD_TTL = 300              # 5 分钟
+
 # ── 资讯缓存（stale-while-revalidate，15 分钟 TTL）──────────────────
 _news_cache = None
 _news_cache_timestamp = None
 _news_refreshing = False          # 防止并发重复刷新
 _NEWS_TTL = 900                   # 15 分钟
+
+
+def _do_refresh_dashboard():
+    """在后台线程中刷新仪表盘缓存。"""
+    global _dashboard_cache, _dashboard_cache_timestamp, _dashboard_refreshing
+    try:
+        result = run_dashboard()
+
+        indicators_json = {}
+        for name, ind in result.indicators.items():
+            indicators_json[name] = {
+                "name": ind.name,
+                "value": None if np.isnan(ind.value) else float(ind.value),
+                "score": ind.score,
+                "color": ind.color,
+                "status": ind.status,
+                "priority": ind.priority,
+                "url": ind.url,
+                "description": ind.description,
+                "method": ind.method
+            }
+
+        df = get_cached_btc_data()
+        sparklines = get_sparklines(df, result.indicators, days=7)
+
+        _dashboard_cache = {
+            "timestamp": result.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            "btc_price": float(result.btc_price),
+            "total_score": float(result.total_score),
+            "recommendation": result.recommendation,
+            "indicators": indicators_json,
+            "sparklines": sparklines
+        }
+        _dashboard_cache_timestamp = datetime.now()
+        print(f"✅ 仪表盘缓存刷新完成 {_dashboard_cache_timestamp.strftime('%H:%M:%S')}")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"⚠️ 仪表盘缓存刷新失败: {e}")
+    finally:
+        _dashboard_refreshing = False
+
+
+def trigger_dashboard_refresh():
+    """触发后台刷新仪表盘（若未在刷新中）。"""
+    global _dashboard_refreshing
+    if not _dashboard_refreshing:
+        _dashboard_refreshing = True
+        t = threading.Thread(target=_do_refresh_dashboard, daemon=True)
+        t.start()
 
 
 def _do_refresh_news():
@@ -98,6 +154,7 @@ def get_cached_btc_data():
 def _delayed_warmup():
     import time as _t
     _t.sleep(5)
+    trigger_dashboard_refresh()
     trigger_news_refresh()
 
 threading.Thread(target=_delayed_warmup, daemon=True).start()
@@ -111,42 +168,41 @@ def index():
 
 @app.route('/api/dashboard')
 def api_dashboard():
-    """API 端点：返回仪表盘数据"""
-    try:
-        result = run_dashboard()
+    """
+    API 端点：返回仪表盘数据
+    策略：stale-while-revalidate
+      - 有缓存 → 立即返回，若已过期则同时触发后台刷新
+      - 无缓存 → 等待首次刷新完成（仅冷启动，最多 90 秒）
+    """
+    global _dashboard_cache, _dashboard_cache_timestamp
 
-        indicators_json = {}
-        for name, ind in result.indicators.items():
-            indicators_json[name] = {
-                "name": ind.name,
-                "value": None if np.isnan(ind.value) else float(ind.value),
-                "score": ind.score,
-                "color": ind.color,
-                "status": ind.status,
-                "priority": ind.priority,
-                "url": ind.url,
-                "description": ind.description,
-                "method": ind.method
-            }
+    now = datetime.now()
+    cache_age = (now - _dashboard_cache_timestamp).seconds if _dashboard_cache_timestamp else None
+    has_cache = _dashboard_cache is not None
 
-        # Get cached df for sparklines (reuses existing cache, zero extra API calls)
-        df = get_cached_btc_data()
-        sparklines = get_sparklines(df, result.indicators, days=7)
-
+    if has_cache:
+        if cache_age is not None and cache_age >= _DASHBOARD_TTL:
+            trigger_dashboard_refresh()
         return jsonify({
             "success": True,
-            "timestamp": result.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-            "btc_price": float(result.btc_price),
-            "total_score": float(result.total_score),
-            "recommendation": result.recommendation,
-            "indicators": indicators_json,
-            "sparklines": sparklines
+            "cached": True,
+            "cache_age_s": cache_age,
+            **_dashboard_cache
         })
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
+    # 无缓存（冷启动）：触发刷新并轮询最多 90 秒
+    trigger_dashboard_refresh()
+    import time
+    for _ in range(180):
+        time.sleep(0.5)
+        if _dashboard_cache is not None:
+            return jsonify({
+                "success": True,
+                "cached": False,
+                "cache_age_s": 0,
+                **_dashboard_cache
+            })
+    return jsonify({"success": False, "error": "指标加载超时，请稍后刷新"}), 504
 
 
 @app.route('/api/history/<indicator_name>')
