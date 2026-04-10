@@ -3654,7 +3654,8 @@ WEIGHTS = {
     "ETF资金流": 0.01,
     "BTC市占率": 0.01,
     "全网算力": 0.01,
-    "公司持仓": 0.01,
+    "MSTR mNAV": 0.01,
+    "公司持仓": 0.00,
 }  # 总和 = 1.00 (100%)
 
 
@@ -3947,6 +3948,7 @@ def run_dashboard() -> DashboardResult:
         "最大痛点": calc_max_pain,
         "BTC市占率": calc_btc_dominance,
         "ETF资金流": calc_etf_flow,
+        "MSTR mNAV": calc_mnav,
         "公司持仓": calc_company_holdings,
         "交易所余额": calc_exchange_reserve,
         "全网算力": calc_hashrate,
