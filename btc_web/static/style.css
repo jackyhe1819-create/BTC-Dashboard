@@ -209,6 +209,30 @@
     border-color: rgba(180, 155, 110, 0.3) !important;
 }
 
+/* Bitcoin 开发者动态 & 调研资源 — 硬编码深色背景覆盖 */
+[data-theme="warm"] .builders-group,
+[data-theme="warm"] .research-group {
+    background: #faf7f0;
+    border-color: rgba(180, 155, 110, 0.3);
+}
+[data-theme="warm"] .builders-group-title {
+    color: #2e2618;
+    border-bottom-color: rgba(180, 155, 110, 0.25);
+}
+[data-theme="warm"] .builders-badge.critical { background: rgba(212,114,14,0.14); color: #a05000; }
+[data-theme="warm"] .builders-badge.high     { background: rgba(30,80,180,0.1);   color: #1a4aaa; }
+
+[data-theme="warm"] .research-group-title {
+    color: #a05000;
+    border-bottom-color: rgba(180, 155, 110, 0.25);
+}
+[data-theme="warm"] .research-name { color: #1e1a14; }
+[data-theme="warm"] .research-desc { color: #7a6a50; }
+[data-theme="warm"] .research-item {
+    border-bottom-color: rgba(180, 155, 110, 0.2);
+}
+[data-theme="warm"] .research-item:hover { background: rgba(212,114,14,0.06); }
+
 /* ── 主题切换按钮 ─────────────────────────────────────────────── */
 .theme-btn {
     position: fixed;
