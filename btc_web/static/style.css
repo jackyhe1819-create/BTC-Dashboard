@@ -29,114 +29,142 @@
     --font-mono: 'SF Mono', 'Fira Code', monospace;
 }
 
-/* ── 白色主题 ─────────────────────────────────────────────── */
+/* ── 米白色主题 ─────────────────────────────────────────────── */
 [data-theme="warm"] {
-    --bg-primary: #f5f5f7;
-    --bg-secondary: #ffffff;
-    --bg-card: rgba(255, 255, 255, 0.92);
+    --bg-primary: #f2efe8;
+    --bg-secondary: #ede9e0;
+    --bg-card: rgba(250, 247, 240, 0.95);
     --bg-glass: rgba(0, 0, 0, 0.03);
-    --border-color: rgba(0, 0, 0, 0.1);
+    --border-color: rgba(180, 160, 120, 0.25);
 
-    --text-primary: #1a1a1a;
-    --text-secondary: #555566;
-    --text-muted: #999aaa;
+    --text-primary: #1e1a14;
+    --text-secondary: #5a5040;
+    --text-muted: #9a8e7a;
 
-    --accent-green: #00aa55;
-    --accent-yellow: #e08800;
-    --accent-red: #dd3344;
-    --accent-blue: #2266dd;
-    --accent-orange: #f7931a;
+    --accent-green: #2a9a5c;
+    --accent-yellow: #c07800;
+    --accent-red: #cc2233;
+    --accent-blue: #1a5fcc;
+    --accent-orange: #d4720e;
 
-    --gradient-gold: linear-gradient(135deg, #f7931a 0%, #e0a800 100%);
-    --gradient-green: linear-gradient(135deg, #00aa55 0%, #008844 100%);
-    --gradient-red: linear-gradient(135deg, #dd3344 0%, #bb1122 100%);
-    --gradient-yellow: linear-gradient(135deg, #e08800 0%, #cc6600 100%);
+    --gradient-gold: linear-gradient(135deg, #d4720e 0%, #c09000 100%);
+    --gradient-green: linear-gradient(135deg, #2a9a5c 0%, #1a7a44 100%);
+    --gradient-red: linear-gradient(135deg, #cc2233 0%, #aa1122 100%);
+    --gradient-yellow: linear-gradient(135deg, #c07800 0%, #a06000 100%);
 
-    --shadow-glow: 0 0 20px rgba(247, 147, 26, 0.25);
-    --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.1);
+    --shadow-glow: 0 0 20px rgba(212, 114, 14, 0.2);
+    --shadow-card: 0 4px 16px rgba(100, 80, 40, 0.12);
 }
 
 [data-theme="warm"] body {
-    background: #f0f0f5;
+    background: var(--bg-primary);
 }
 
 [data-theme="warm"] body::before {
     background:
-        radial-gradient(ellipse at 20% 20%, rgba(247, 147, 26, 0.07) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 80%, rgba(68, 136, 255, 0.05) 0%, transparent 50%),
-        radial-gradient(ellipse at 50% 50%, rgba(0, 180, 100, 0.04) 0%, transparent 70%);
+        radial-gradient(ellipse at 20% 20%, rgba(212, 114, 14, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(42, 154, 92, 0.04) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(180, 160, 100, 0.04) 0%, transparent 70%);
 }
 
+/* 卡片 & 容器 */
 [data-theme="warm"] .indicator-card {
-    background: #ffffff;
-    border-color: rgba(0, 0, 0, 0.08);
-    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    background: #faf7f0;
+    border-color: rgba(180, 155, 110, 0.3);
+    box-shadow: 0 2px 10px rgba(100, 80, 40, 0.1);
+}
+[data-theme="warm"] .indicator-card:hover {
+    border-color: rgba(212, 114, 14, 0.4);
+    box-shadow: 0 6px 20px rgba(100, 80, 40, 0.15);
+}
+[data-theme="warm"] .indicator-card.clickable:hover {
+    background: rgba(212, 114, 14, 0.05);
+    border-color: rgba(212, 114, 14, 0.4);
 }
 
 [data-theme="warm"] .section-card {
-    background: #ffffff;
-    border-color: rgba(0, 0, 0, 0.08);
-    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    background: #faf7f0;
+    border-color: rgba(180, 155, 110, 0.3);
+    box-shadow: 0 2px 10px rgba(100, 80, 40, 0.1);
 }
 
+/* indicator-card-v2 */
+[data-theme="warm"] .indicator-card-v2 {
+    background: #faf7f0;
+    border-color: rgba(180, 155, 110, 0.3);
+    border-left-color: #c8b890;
+}
+[data-theme="warm"] .indicator-card-v2:hover { border-color: #d4720e; }
+[data-theme="warm"] .indicator-card-v2.color-green  { border-left-color: #2a9a5c; }
+[data-theme="warm"] .indicator-card-v2.color-yellow { border-left-color: #c07800; }
+[data-theme="warm"] .indicator-card-v2.color-red    { border-left-color: #cc2233; }
+
+/* badge 颜色 */
+[data-theme="warm"] .badge-green  { background: rgba(42,154,92,0.12);  color: #1a7a44; }
+[data-theme="warm"] .badge-yellow { background: rgba(192,120,0,0.12);  color: #a06000; }
+[data-theme="warm"] .badge-red    { background: rgba(204,34,51,0.12);  color: #aa1122; }
+
+/* card-v2 文字 */
+[data-theme="warm"] .card-v2-name   { color: #7a6a50; }
+[data-theme="warm"] .card-v2-value  { color: #1e1a14; }
+[data-theme="warm"] .card-v2-status { color: #7a6a50; }
+[data-theme="warm"] .card-v2-extlink { color: #d4720e; }
+
+/* 顶部摘要栏 */
+[data-theme="warm"] .top-summary-bar {
+    background: #faf7f0;
+    border-color: rgba(180, 155, 110, 0.3);
+    box-shadow: 0 2px 10px rgba(100, 80, 40, 0.1);
+}
+[data-theme="warm"] .summary-item .label { color: #7a6a50; }
+[data-theme="warm"] .summary-item .value { color: #1e1a14; }
+
+/* 文字 */
+[data-theme="warm"] .section-title  { color: #2e2618; }
+[data-theme="warm"] .indicator-name { color: #1e1a14; }
+[data-theme="warm"] .indicator-status { color: #6a5a42; }
+
+/* 分数条 & 指标状态颜色适配亮色 */
+[data-theme="warm"] .range-cell.green       { color: #1a7a44; }
+[data-theme="warm"] .range-cell.green-light { color: #2a9a5c; }
+[data-theme="warm"] .range-cell.yellow      { color: #a06000; }
+[data-theme="warm"] .range-cell.orange      { color: #c05000; }
+[data-theme="warm"] .range-cell.red         { color: #aa1122; }
+
+/* Tab 按钮 */
+[data-theme="warm"] .tab-btn {
+    color: #6a5a42;
+    border-color: rgba(180, 155, 110, 0.3);
+    background: rgba(240, 235, 220, 0.6);
+}
+[data-theme="warm"] .tab-btn.active {
+    background: rgba(212, 114, 14, 0.12);
+    border-color: rgba(212, 114, 14, 0.45);
+    color: #a05000;
+}
+
+/* 列表项 */
 [data-theme="warm"] .news-item,
 [data-theme="warm"] .whale-item,
 [data-theme="warm"] .calendar-item,
 [data-theme="warm"] .builders-item {
-    border-bottom-color: rgba(0, 0, 0, 0.07);
+    border-bottom-color: rgba(180, 155, 110, 0.2);
 }
-
 [data-theme="warm"] .news-item:hover,
 [data-theme="warm"] .builders-item:hover {
-    background: rgba(247, 147, 26, 0.05);
+    background: rgba(212, 114, 14, 0.05);
 }
+[data-theme="warm"] .news-title        { color: #2e2618; }
+[data-theme="warm"] .news-meta         { color: #9a8060; }
+[data-theme="warm"] .builders-item-title   { color: #2e2618; }
+[data-theme="warm"] .builders-item-summary { color: #8a7560; }
+[data-theme="warm"] .builders-item-date    { color: #9a8a70; }
 
-[data-theme="warm"] .tab-btn {
-    color: #555;
-    border-color: rgba(0,0,0,0.15);
-}
-
-[data-theme="warm"] .tab-btn.active {
-    background: rgba(247, 147, 26, 0.12);
-    border-color: rgba(247, 147, 26, 0.5);
-    color: #c06000;
-}
-
-[data-theme="warm"] .top-summary-bar {
-    background: #ffffff;
-    border-color: rgba(0, 0, 0, 0.1);
-    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
-}
-
-[data-theme="warm"] .section-title {
-    color: #333;
-}
-
-[data-theme="warm"] .indicator-name {
-    color: #222;
-}
-
-[data-theme="warm"] .indicator-status {
-    color: #666;
-}
-
+/* Skeleton */
 [data-theme="warm"] .skel {
-    background: linear-gradient(90deg, #e8e8ec 25%, #d8d8de 50%, #e8e8ec 75%);
+    background: linear-gradient(90deg, #e8e2d4 25%, #d8d0be 50%, #e8e2d4 75%);
     background-size: 200% 100%;
-}
-
-[data-theme="warm"] .news-title {
-    color: #222;
-}
-
-[data-theme="warm"] .news-meta,
-[data-theme="warm"] .builders-item-date,
-[data-theme="warm"] .builders-item-summary {
-    color: #888;
-}
-
-[data-theme="warm"] .builders-item-title {
-    color: #333;
+    animation: shimmer 1.4s infinite;
 }
 
 /* ── 主题切换按钮 ─────────────────────────────────────────────── */
