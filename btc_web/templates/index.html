@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" id="htmlRoot">
 
 <head>
     <meta charset="UTF-8">
@@ -16,7 +16,14 @@
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=12">
+    <!-- 防止主题闪烁：在 CSS 加载前立即恢复主题 -->
+    <script>
+        (function() {
+            var t = localStorage.getItem('btc-theme');
+            if (t) document.getElementById('htmlRoot').setAttribute('data-theme', t);
+        })();
+    </script>
     <!-- Chart.js for history drawer -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
@@ -443,6 +450,8 @@
 
     <!-- Refresh Button -->
     <button class="refresh-btn" id="refreshBtn" title="刷新数据">🔄</button>
+    <!-- Theme Toggle Button -->
+    <button class="theme-btn" id="themeBtn" title="切换暖色/暗色主题">🌙</button>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <!-- Global Tooltip Container (Nuclear Option to bypass clipping) -->

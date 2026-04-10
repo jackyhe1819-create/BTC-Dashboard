@@ -51,8 +51,33 @@ function renderSkeletons() {
     }
 }
 
+// ── 主题切换 ────────────────────────────────────────────────────
+function applyTheme(theme) {
+    const html = document.getElementById('htmlRoot');
+    if (theme === 'warm') {
+        html.setAttribute('data-theme', 'warm');
+        document.getElementById('themeBtn').textContent = '☀️';
+        document.getElementById('themeBtn').title = '切换为暗色主题';
+    } else {
+        html.removeAttribute('data-theme');
+        document.getElementById('themeBtn').textContent = '🌙';
+        document.getElementById('themeBtn').title = '切换为暖色主题';
+    }
+    localStorage.setItem('btc-theme', theme);
+}
+
 // 页面加载时获取数据
 document.addEventListener('DOMContentLoaded', () => {
+    // 恢复主题按钮图标
+    const savedTheme = localStorage.getItem('btc-theme') || 'dark';
+    applyTheme(savedTheme);
+
+    // 主题切换点击
+    document.getElementById('themeBtn')?.addEventListener('click', () => {
+        const current = localStorage.getItem('btc-theme') || 'dark';
+        applyTheme(current === 'warm' ? 'dark' : 'warm');
+    });
+
     renderSkeletons();
     fetchDashboardData();
     setInterval(fetchDashboardData, REFRESH_INTERVAL);
