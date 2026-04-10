@@ -16,7 +16,7 @@
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=14">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=15">
     <!-- 防止主题闪烁：在 CSS 加载前立即恢复主题 -->
     <script>
         (function() {
@@ -83,20 +83,25 @@
                     <div id="tradingview_b1e2c" style="height: 100%; width: 100%;"></div>
                     <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
                     <script type="text/javascript">
-                        new TradingView.widget(
-                            {
+                        function initTradingViewWidget(theme) {
+                            const container = document.getElementById('tradingview_b1e2c');
+                            container.innerHTML = '';
+                            new TradingView.widget({
                                 "autosize": true,
                                 "symbol": "INDEX:BTCUSD",
                                 "interval": "D",
                                 "timezone": "Etc/UTC",
-                                "theme": "dark",
+                                "theme": theme || "dark",
                                 "style": "1",
                                 "locale": "zh_CN",
                                 "enable_publishing": false,
                                 "allow_symbol_change": true,
                                 "container_id": "tradingview_b1e2c"
-                            }
-                        );
+                            });
+                        }
+                        // 初始加载时读取已保存的主题
+                        const _initTheme = localStorage.getItem('btc-theme') === 'warm' ? 'light' : 'dark';
+                        initTradingViewWidget(_initTheme);
                     </script>
                 </div>
                 <!-- TradingView Widget END -->

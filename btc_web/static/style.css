@@ -167,6 +167,48 @@
     animation: shimmer 1.4s infinite;
 }
 
+/* 指标总览 conclusion-badge — 米白主题下降低饱和度，提升可读性 */
+[data-theme="warm"] .conclusion-badge.bullish {
+    background: rgba(30, 140, 80, 0.14);
+    color: #1a7a44;
+}
+[data-theme="warm"] .conclusion-badge.strong-bullish {
+    background: rgba(30, 140, 80, 0.22);
+    color: #155e34;
+    font-weight: 700;
+}
+[data-theme="warm"] .conclusion-badge.neutral {
+    background: rgba(160, 100, 0, 0.12);
+    color: #8a5a00;
+}
+[data-theme="warm"] .conclusion-badge.bearish {
+    background: rgba(180, 30, 50, 0.12);
+    color: #9a1520;
+}
+[data-theme="warm"] .conclusion-badge.strong-bearish {
+    background: rgba(180, 30, 50, 0.2);
+    color: #7a1018;
+    font-weight: 700;
+}
+[data-theme="warm"] .conclusion-badge.info {
+    background: rgba(30, 80, 180, 0.1);
+    color: #1a4aaa;
+}
+
+/* 指标总览标题 */
+[data-theme="warm"] .table-title { color: #2e2618; }
+
+/* summary-tabs 背景 */
+[data-theme="warm"] .summary-tabs {
+    background: rgba(180, 155, 110, 0.1);
+}
+
+/* K线图容器背景跟随主题 */
+[data-theme="warm"] .chart-section {
+    background: #faf7f0 !important;
+    border-color: rgba(180, 155, 110, 0.3) !important;
+}
+
 /* ── 主题切换按钮 ─────────────────────────────────────────────── */
 .theme-btn {
     position: fixed;
@@ -727,10 +769,11 @@ body::before {
 
 .table-title {
     font-size: 1.1rem;
-    color: var(--text-secondary);
+    color: var(--text-primary);
     margin-bottom: 10px;
     text-align: center;
     flex-shrink: 0;
+    font-weight: 600;
 }
 
 /* External Links Module */

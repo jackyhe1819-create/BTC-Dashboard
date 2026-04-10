@@ -61,9 +61,14 @@ function applyTheme(theme) {
     } else {
         html.removeAttribute('data-theme');
         document.getElementById('themeBtn').textContent = '☀️';
-        document.getElementById('themeBtn').title = '切换为白色主题';
+        document.getElementById('themeBtn').title = '切换为米白主题';
     }
     localStorage.setItem('btc-theme', theme);
+
+    // 同步 TradingView K 线图主题
+    if (typeof initTradingViewWidget === 'function') {
+        initTradingViewWidget(theme === 'warm' ? 'light' : 'dark');
+    }
 }
 
 // 页面加载时获取数据
