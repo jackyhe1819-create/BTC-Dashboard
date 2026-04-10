@@ -29,75 +29,114 @@
     --font-mono: 'SF Mono', 'Fira Code', monospace;
 }
 
-/* ── 暖色调主题 ─────────────────────────────────────────────── */
+/* ── 白色主题 ─────────────────────────────────────────────── */
 [data-theme="warm"] {
-    --bg-primary: #1a1008;
-    --bg-secondary: #221508;
-    --bg-card: rgba(42, 28, 10, 0.88);
-    --bg-glass: rgba(255, 200, 100, 0.06);
-    --border-color: rgba(247, 147, 26, 0.18);
+    --bg-primary: #f5f5f7;
+    --bg-secondary: #ffffff;
+    --bg-card: rgba(255, 255, 255, 0.92);
+    --bg-glass: rgba(0, 0, 0, 0.03);
+    --border-color: rgba(0, 0, 0, 0.1);
 
-    --text-primary: #fdf0dc;
-    --text-secondary: #c8a87a;
-    --text-muted: #7a6040;
+    --text-primary: #1a1a1a;
+    --text-secondary: #555566;
+    --text-muted: #999aaa;
 
-    --accent-green: #44cc88;
-    --accent-yellow: #f7c948;
-    --accent-red: #e05050;
-    --accent-blue: #6aabee;
+    --accent-green: #00aa55;
+    --accent-yellow: #e08800;
+    --accent-red: #dd3344;
+    --accent-blue: #2266dd;
     --accent-orange: #f7931a;
 
-    --gradient-gold: linear-gradient(135deg, #e07b10 0%, #f7c948 100%);
-    --gradient-green: linear-gradient(135deg, #44cc88 0%, #22aa66 100%);
-    --gradient-red: linear-gradient(135deg, #e05050 0%, #b03030 100%);
-    --gradient-yellow: linear-gradient(135deg, #f7c948 0%, #e08820 100%);
+    --gradient-gold: linear-gradient(135deg, #f7931a 0%, #e0a800 100%);
+    --gradient-green: linear-gradient(135deg, #00aa55 0%, #008844 100%);
+    --gradient-red: linear-gradient(135deg, #dd3344 0%, #bb1122 100%);
+    --gradient-yellow: linear-gradient(135deg, #e08800 0%, #cc6600 100%);
 
-    --shadow-glow: 0 0 30px rgba(247, 147, 26, 0.45);
-    --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.5);
+    --shadow-glow: 0 0 20px rgba(247, 147, 26, 0.25);
+    --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="warm"] body {
+    background: #f0f0f5;
 }
 
 [data-theme="warm"] body::before {
     background:
-        radial-gradient(ellipse at 20% 20%, rgba(247, 147, 26, 0.18) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 80%, rgba(200, 100, 30, 0.12) 0%, transparent 50%),
-        radial-gradient(ellipse at 50% 50%, rgba(255, 200, 80, 0.07) 0%, transparent 70%);
+        radial-gradient(ellipse at 20% 20%, rgba(247, 147, 26, 0.07) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(68, 136, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(0, 180, 100, 0.04) 0%, transparent 70%);
 }
 
 [data-theme="warm"] .indicator-card {
-    background: rgba(40, 26, 8, 0.85);
-    border-color: rgba(247, 147, 26, 0.15);
+    background: #ffffff;
+    border-color: rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
 }
 
 [data-theme="warm"] .section-card {
-    background: rgba(34, 22, 6, 0.9);
-    border-color: rgba(247, 147, 26, 0.15);
+    background: #ffffff;
+    border-color: rgba(0, 0, 0, 0.08);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
 }
 
 [data-theme="warm"] .news-item,
 [data-theme="warm"] .whale-item,
 [data-theme="warm"] .calendar-item,
 [data-theme="warm"] .builders-item {
-    border-bottom-color: rgba(247, 147, 26, 0.1);
+    border-bottom-color: rgba(0, 0, 0, 0.07);
 }
 
 [data-theme="warm"] .news-item:hover,
 [data-theme="warm"] .builders-item:hover {
-    background: rgba(247, 147, 26, 0.08);
+    background: rgba(247, 147, 26, 0.05);
+}
+
+[data-theme="warm"] .tab-btn {
+    color: #555;
+    border-color: rgba(0,0,0,0.15);
 }
 
 [data-theme="warm"] .tab-btn.active {
-    background: rgba(247, 147, 26, 0.2);
+    background: rgba(247, 147, 26, 0.12);
     border-color: rgba(247, 147, 26, 0.5);
-    color: #f7c948;
+    color: #c06000;
 }
 
 [data-theme="warm"] .top-summary-bar {
-    background: rgba(34, 22, 6, 0.9);
-    border-color: rgba(247, 147, 26, 0.2);
+    background: #ffffff;
+    border-color: rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+}
+
+[data-theme="warm"] .section-title {
+    color: #333;
+}
+
+[data-theme="warm"] .indicator-name {
+    color: #222;
+}
+
+[data-theme="warm"] .indicator-status {
+    color: #666;
 }
 
 [data-theme="warm"] .skel {
-    background: linear-gradient(90deg, rgba(80,50,10,0.4) 25%, rgba(120,80,20,0.3) 50%, rgba(80,50,10,0.4) 75%);
+    background: linear-gradient(90deg, #e8e8ec 25%, #d8d8de 50%, #e8e8ec 75%);
+    background-size: 200% 100%;
+}
+
+[data-theme="warm"] .news-title {
+    color: #222;
+}
+
+[data-theme="warm"] .news-meta,
+[data-theme="warm"] .builders-item-date,
+[data-theme="warm"] .builders-item-summary {
+    color: #888;
+}
+
+[data-theme="warm"] .builders-item-title {
+    color: #333;
 }
 
 /* ── 主题切换按钮 ─────────────────────────────────────────────── */

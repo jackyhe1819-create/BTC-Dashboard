@@ -56,12 +56,12 @@ function applyTheme(theme) {
     const html = document.getElementById('htmlRoot');
     if (theme === 'warm') {
         html.setAttribute('data-theme', 'warm');
-        document.getElementById('themeBtn').textContent = '☀️';
+        document.getElementById('themeBtn').textContent = '🌙';
         document.getElementById('themeBtn').title = '切换为暗色主题';
     } else {
         html.removeAttribute('data-theme');
-        document.getElementById('themeBtn').textContent = '🌙';
-        document.getElementById('themeBtn').title = '切换为暖色主题';
+        document.getElementById('themeBtn').textContent = '☀️';
+        document.getElementById('themeBtn').title = '切换为白色主题';
     }
     localStorage.setItem('btc-theme', theme);
 }
