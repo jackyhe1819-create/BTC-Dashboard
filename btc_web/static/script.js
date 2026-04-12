@@ -1040,7 +1040,7 @@ function renderCryptoNews(news) {
             <div style="display:flex; align-items:flex-start; gap:6px; margin-bottom:${summary ? '5px' : '0'};">
                 <span style="font-size:0.75rem; flex-shrink:0; margin-top:1px;">⚡</span>
                 <a href="${item.url}" target="_blank" rel="noopener noreferrer"
-                   style="flex:1; font-size:0.855rem; font-weight:500; color:#e0c97f; text-decoration:none; line-height:1.4;">
+                   style="flex:1; font-size:0.855rem; font-weight:500; color:#e8a832; text-decoration:none; line-height:1.4;">
                     ${item.title}
                 </a>
                 <span style="font-size:0.67rem; color:#555; white-space:nowrap; flex-shrink:0; margin-top:2px;">${item.time}</span>
