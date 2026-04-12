@@ -85,8 +85,10 @@ def _do_refresh_dashboard():
         _dashboard_cache_timestamp = datetime.now()
         print(f"✅ 仪表盘缓存刷新完成 {_dashboard_cache_timestamp.strftime('%H:%M:%S')}")
     except Exception as e:
+        global _last_error
         import traceback
         traceback.print_exc()
+        _last_error = f"{type(e).__name__}: {e}"
         print(f"⚠️ 仪表盘缓存刷新失败: {e}")
     finally:
         _dashboard_refreshing = False
@@ -193,10 +195,21 @@ def _delayed_warmup():
 threading.Thread(target=_delayed_warmup, daemon=True).start()
 
 
+_last_error = None  # 记录最近一次后台错误
+
 @app.route('/api/version')
 def api_version():
     """部署版本检查"""
-    return jsonify({"version": "2026-04-12-tz8-fix", "server_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')})
+    import sys
+    return jsonify({
+        "version": "2026-04-12-v2",
+        "server_time": datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC'),
+        "python": sys.version,
+        "dashboard_ready": _dashboard_cache is not None,
+        "news_ready": _news_cache is not None,
+        "refreshing": _dashboard_refreshing,
+        "last_error": _last_error
+    })
 
 
 @app.route('/')
