@@ -1887,7 +1887,7 @@ def calc_mnav() -> IndicatorResult:
             name="MSTR mNAV",
             value=float('nan'), score=0, color="⚪",
             status=f"数据获取失败 (MSTR={'N/A' if mstr_price is None else f'${mstr_price:.0f}'})",
-            priority="P2",
+            priority="P0",
             url="https://saylortracker.com/",
             description=_desc, method=_method
         )
@@ -1913,7 +1913,7 @@ def calc_mnav() -> IndicatorResult:
         score=score, color=color,
         status=(f"MSTR ${mstr_price:.1f} | BTC NAV ${btc_nav/1e9:.1f}B | "
                 f"{mnav:.2f}x {label}"),
-        priority="P2",
+        priority="P0",
         url="https://saylortracker.com/",
         description=_desc, method=_method
     )
@@ -2153,122 +2153,82 @@ def _cached_translate(text: str) -> str:
 
 def fetch_crypto_news(limit: int = 20) -> list:
     """
-    获取 BTC 相关新闻 - 从多个 RSS 源聚合
-    - 数据源: CoinDesk, CoinTelegraph, Bitcoin Magazine, NewsBTC, 律动
-    - 英文源自动翻译成中文
-    - 按时间排序，最新在前
+    获取律动 BlockBeats 快讯 - 最近 36 小时内容，支持分页滚动
+    - 数据源: 律动 BlockBeats Flash API（分页拉取，每页最多 20 条）
+    - 按发布时间排序，最新在前
+    - 自动翻页直到覆盖 36 小时，最多 15 页（~300 条）
     """
-    import xml.etree.ElementTree as ET
-    from datetime import datetime
     import re
-    
-    # 翻译功能（使用模块级 LRU 缓存，跨调用复用翻译结果）
-    def translate_to_chinese(text: str) -> str:
-        """将英文翻译成中文"""
-        if not text or len(text.strip()) == 0:
-            return text
+    from datetime import datetime, timedelta
 
-        # 检查缓存
-        if text in translation_cache:
-            return translation_cache[text]
-
-        try:
-            if translator is None:
-                from deep_translator import GoogleTranslator
-                translator = GoogleTranslator(source='en', target='zh-CN')
-            from concurrent.futures import ThreadPoolExecutor as _TP, TimeoutError as _TE
-            with _TP(max_workers=1) as _p:
-                future = _p.submit(translator.translate, text)
-                translated = future.result(timeout=3)
-            translation_cache[text] = translated
-            return translated
-        except Exception as e:
-            return text  # 翻译超时或失败，返回原文
-    
-    news_list = []
-    
-    # RSS 源列表 (is_chinese 标记中文源，无需翻译)
-    rss_feeds = [
-        {
-            "name": "律动 BlockBeats",
-            "url": "https://api.theblockbeats.news/v2/rss/newsflash",
-            "icon": "🎵",
-            "is_chinese": True
-        },
-    ]
-    
-    def parse_rss_date(date_str: str) -> datetime:
-        """解析 RSS 日期格式"""
-        formats = [
-            "%a, %d %b %Y %H:%M:%S %z",
-            "%a, %d %b %Y %H:%M:%S GMT",
-            "%Y-%m-%dT%H:%M:%S%z",
-            "%Y-%m-%d %H:%M:%S",
-        ]
-        for fmt in formats:
-            try:
-                return datetime.strptime(date_str.strip(), fmt)
-            except (ValueError, TypeError):
-                continue
-        return datetime.now()
-    
     def clean_html(text: str) -> str:
-        """移除 HTML 标签"""
         clean = re.sub(r'<[^>]+>', '', text or '')
-        return clean[:150] + '...' if len(clean) > 150 else clean
-    
-    def fetch_one_feed(feed):
-        """抓取单个 RSS 源，返回 news_item 列表"""
-        items_out = []
-        try:
-            response = requests.get(feed["url"], timeout=5, headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
-            })
+        return clean[:200] + '...' if len(clean) > 200 else clean
+
+    cutoff = datetime.now() - timedelta(hours=36)
+    cutoff_ts = int(cutoff.timestamp())
+
+    news_list = []
+    page = 1
+    max_pages = 15
+
+    try:
+        while page <= max_pages:
+            response = requests.get(
+                "https://api.theblockbeats.news/v1/open-api/open-flash",
+                params={"size": 20, "page": page, "type": "push", "lang": "cn"},
+                timeout=15,
+                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+            )
             if response.status_code != 200:
-                return items_out
-            root = ET.fromstring(response.content)
-            for item in root.findall('.//item')[:limit]:
-                title = item.find('title')
-                link = item.find('link')
-                pub_date = item.find('pubDate')
-                description = item.find('description')
-                if title is None or link is None:
+                break
+
+            data = response.json()
+            items = data.get("data", {}).get("data", [])
+            if not items:
+                break
+
+            reached_cutoff = False
+            for item in items:
+                # API 返回的时间字段是 create_time（字符串时间戳）
+                create_time = item.get("create_time", 0)
+                try:
+                    ts = int(create_time)
+                except (TypeError, ValueError):
+                    ts = 0
+
+                if ts and ts < cutoff_ts:
+                    reached_cutoff = True
+                    break
+
+                title = item.get("title", "").strip()
+                content = clean_html(item.get("content", ""))
+                if not title:
                     continue
-                title_text = title.text or ""
-                summary_text = clean_html(description.text if description is not None else "")
-                # 英文源仅翻译标题（带 3 秒超时保护；摘要保留原文节省时间）
-                if not feed.get("is_chinese", False):
-                    title_text = translate_to_chinese(title_text)
-                pub = parse_rss_date(pub_date.text if pub_date is not None else "")
-                items_out.append({
-                    "title": title_text,
-                    "url": link.text or "",
-                    "source": feed["name"],
-                    "icon": feed["icon"],
-                    "summary": summary_text,
-                    "pub_date": pub,
+
+                pub = datetime.fromtimestamp(ts) if ts else datetime.now()
+                url = item.get("link") or f"https://www.theblockbeats.info/flash/{item.get('id', '')}"
+                news_list.append({
+                    "title": title,
+                    "url": url,
+                    "source": "律动 BlockBeats",
+                    "icon": "⚡",
+                    "summary": content,
                     "time": pub.strftime("%m-%d %H:%M"),
+                    "_ts": ts,
                 })
-        except Exception as e:
-            print(f"⚠️ RSS {feed['name']} 失败: {e}")
-        return items_out
 
-    # 并行抓取所有 RSS 源（总超时 15 秒）
-    from concurrent.futures import ThreadPoolExecutor, as_completed as _as_completed
-    with ThreadPoolExecutor(max_workers=len(rss_feeds)) as pool:
-        futures = {pool.submit(fetch_one_feed, feed): feed for feed in rss_feeds}
-        for future in _as_completed(futures, timeout=15):
-            try:
-                news_list.extend(future.result())
-            except Exception:
-                pass
+            if reached_cutoff:
+                break
+            page += 1
 
-    # 按发布时间排序（最新在前）
-    news_list.sort(key=lambda x: x.get("pub_date", datetime.min), reverse=True)
+    except Exception as e:
+        print(f"⚠️ BlockBeats Flash API 失败: {e}")
 
-    # 移除 pub_date 对象（不可 JSON 序列化）
+    # 按时间排序（最新在前），移除内部字段
+    news_list.sort(key=lambda x: x.get("_ts", 0), reverse=True)
     for item in news_list:
-        item.pop("pub_date", None)
+        item.pop("_ts", None)
 
     return news_list
 
@@ -3585,6 +3545,199 @@ def get_dominance_history(days: int = 30) -> dict:
     return {"indicator": "BTC市占率", "dates": [], "values": [], "thresholds": {}}
 
 
+def get_etf_history(days: int = 30) -> dict:
+    """ETF 活跃度历史数据：聚合 IBIT/FBTC/GBTC 日成交额（USD, 十亿）"""
+    try:
+        import yfinance as yf
+        etfs = ["IBIT", "FBTC", "GBTC"]
+        end   = datetime.now()
+        start = end - timedelta(days=days + 14)
+
+        raw = yf.download(etfs, start=start.strftime("%Y-%m-%d"),
+                          end=end.strftime("%Y-%m-%d"),
+                          progress=False, auto_adjust=True)
+        if raw.empty:
+            return {"indicator": "ETF活跃度", "dates": [], "values": [], "thresholds": {}}
+
+        close  = raw["Close"]
+        volume = raw["Volume"]
+
+        # 每只 ETF：当日成交额 = 收盘价 × 成交量
+        vol_usd = pd.DataFrame()
+        for sym in etfs:
+            if sym in close.columns and sym in volume.columns:
+                vol_usd[sym] = close[sym] * volume[sym]
+
+        daily_total = vol_usd.sum(axis=1).dropna()
+        daily_b = (daily_total / 1e9).round(2)  # 转换为十亿美元
+        daily_b = daily_b[daily_b > 0].tail(days)
+
+        dates  = [d.strftime("%Y-%m-%d") for d in daily_b.index]
+        values = daily_b.tolist()
+
+        return {
+            "indicator": "ETF活跃度",
+            "dates":  dates,
+            "values": values,
+            "unit":   "B USD",
+            "thresholds": {
+                "低活跃": {"value": 1.0, "color": "#ffcc00", "label": "低活跃(<$1B)"},
+                "活跃":   {"value": 2.0, "color": "#00e676", "label": "活跃(>$1B)"},
+                "高活跃": {"value": 3.0, "color": "#f79322", "label": "高活跃(>$2B)"},
+            }
+        }
+    except Exception as e:
+        print(f"⚠️ get_etf_history 失败: {e}")
+        return {"indicator": "ETF活跃度", "dates": [], "values": [], "thresholds": {}}
+
+
+def get_lth_cdd_history(days: int = 30) -> dict:
+    """长期持有者(CDD) 历史：从 CoinGecko 180天成交量数据计算每日 7d/90d 量比"""
+    try:
+        response = requests.get(
+            "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=180&interval=daily",
+            timeout=15,
+            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+        )
+        if response.status_code != 200:
+            return {"indicator": "长期持有者(CDD)", "dates": [], "values": [], "thresholds": {}}
+
+        data = response.json()
+        volumes = data.get("total_volumes", [])
+        if len(volumes) < 90:
+            return {"indicator": "长期持有者(CDD)", "dates": [], "values": [], "thresholds": {}}
+
+        timestamps = [v[0] for v in volumes]
+        vol_values = [v[1] for v in volumes]
+        df_vol = pd.DataFrame({"volume": vol_values}, index=pd.to_datetime(timestamps, unit="ms"))
+
+        sma7  = df_vol["volume"].rolling(7).mean()
+        sma90 = df_vol["volume"].rolling(90).mean()
+        ratio = (sma7 / sma90).dropna().tail(days)
+
+        dates  = [d.strftime("%Y-%m-%d") for d in ratio.index]
+        values = [round(v, 3) for v in ratio.values]
+
+        return {
+            "indicator": "长期持有者(CDD)",
+            "dates":  dates,
+            "values": values,
+            "unit":   "ratio",
+            "thresholds": {
+                "吸筹": {"value": 0.8,  "color": "#00e676", "label": "吸筹(<0.8)"},
+                "正常": {"value": 1.3,  "color": "#ffcc00", "label": "正常(0.8-1.3)"},
+                "派发": {"value": 2.0,  "color": "#ff4444", "label": "派发(>1.5)"},
+            }
+        }
+    except Exception as e:
+        print(f"⚠️ get_lth_cdd_history 失败: {e}")
+        return {"indicator": "长期持有者(CDD)", "dates": [], "values": [], "thresholds": {}}
+
+
+def get_company_holdings_history(df: pd.DataFrame, days: int = 30) -> dict:
+    """
+    公司持仓历史：当日持仓量 × 历史 BTC 价格，
+    展示机构持仓总价值（十亿美元）的走势
+    """
+    try:
+        holdings, _ = fetch_company_holdings_data()
+        if not holdings or holdings <= 0:
+            return {"indicator": "公司持仓", "dates": [], "values": [], "thresholds": {}}
+
+        btc_series = df.iloc[:, 0].tail(days)
+        dates  = [d.strftime("%Y-%m-%d") for d in btc_series.index]
+        values = [round(holdings * float(p) / 1e9, 2) for p in btc_series.values]
+
+        return {
+            "indicator": "公司持仓",
+            "dates":  dates,
+            "values": values,
+            "unit":   "B USD",
+            "label":  f"持仓价值（{holdings:,.0f} BTC × BTC价格）",
+            "thresholds": {}
+        }
+    except Exception as e:
+        print(f"⚠️ get_company_holdings_history 失败: {e}")
+        return {"indicator": "公司持仓", "dates": [], "values": [], "thresholds": {}}
+
+
+def get_max_pain_history(df: pd.DataFrame, days: int = 30) -> dict:
+    """
+    最大痛点历史：用当日痛点价格 + 历史 BTC 收盘价，
+    计算 BTC/痛点 比率走势（>1 表示 BTC 高于痛点，<1 表示低于痛点）
+    """
+    try:
+        # 获取当日最大痛点价格
+        result = calc_max_pain()
+        pain_price = result.value
+        if pain_price is None or (isinstance(pain_price, float) and np.isnan(pain_price)):
+            return {"indicator": "最大痛点", "dates": [], "values": [], "thresholds": {}}
+
+        btc_series = df.iloc[:, 0].tail(days)
+        dates  = [d.strftime("%Y-%m-%d") for d in btc_series.index]
+        values = [round(float(p) / pain_price, 3) for p in btc_series.values]
+
+        return {
+            "indicator": "最大痛点",
+            "dates":  dates,
+            "values": values,
+            "unit":   "ratio",
+            "label":  f"BTC / 痛点${pain_price:,.0f}",
+            "thresholds": {
+                "痛点":   {"value": 1.0,  "color": "#f79322", "label": f"痛点 ${pain_price:,.0f}"},
+            }
+        }
+    except Exception as e:
+        print(f"⚠️ get_max_pain_history 失败: {e}")
+        return {"indicator": "最大痛点", "dates": [], "values": [], "thresholds": {}}
+
+
+def get_mnav_history(df: pd.DataFrame = None, days: int = 30) -> dict:
+    """MSTR mNAV 历史数据：用 yfinance 同时拉取 MSTR 和 BTC-USD 计算"""
+    try:
+        import yfinance as yf
+        MSTR_BTC    = 568_840
+        MSTR_SHARES = 246_000_000
+
+        end   = datetime.now()
+        start = end - timedelta(days=days + 14)
+
+        # 同时下载 MSTR 和 BTC-USD，保证日期完全对齐
+        raw = yf.download(["MSTR", "BTC-USD"],
+                          start=start.strftime("%Y-%m-%d"),
+                          end=end.strftime("%Y-%m-%d"),
+                          progress=False, auto_adjust=True)
+        if raw.empty:
+            return {"indicator": "MSTR mNAV", "dates": [], "values": [], "thresholds": {}}
+
+        close = raw["Close"]           # MultiIndex columns: (ticker)
+        mstr  = close["MSTR"].dropna()
+        btc   = close["BTC-USD"].dropna()
+        merged = pd.concat([mstr, btc], axis=1, join="inner")
+        merged.columns = ["mstr", "btc"]
+        merged = merged.dropna().tail(days)
+
+        dates  = [d.strftime("%Y-%m-%d") for d in merged.index]
+        values = [round((MSTR_SHARES * float(row.mstr)) / (MSTR_BTC * float(row.btc)), 3)
+                  for _, row in merged.iterrows()]
+
+        return {
+            "indicator": "MSTR mNAV",
+            "dates":  dates,
+            "values": values,
+            "unit":   "x",
+            "thresholds": {
+                "折价":   {"value": 1.0,  "color": "#00e676", "label": "折价(<1×)"},
+                "低溢价": {"value": 1.5,  "color": "#f79322", "label": "低溢价(<1.5×)"},
+                "正常":   {"value": 2.0,  "color": "#ffcc00", "label": "正常(<2×)"},
+                "高溢价": {"value": 3.0,  "color": "#ff4444", "label": "高溢价(≥3×)"},
+            }
+        }
+    except Exception as e:
+        print(f"⚠️ get_mnav_history 失败: {e}")
+        return {"indicator": "MSTR mNAV", "dates": [], "values": [], "thresholds": {}}
+
+
 def get_indicator_history(indicator_name: str, df: pd.DataFrame = None, days: int = 30) -> dict:
     """统一的历史数据获取入口"""
     if indicator_name == "Ahr999" and df is not None:
@@ -3621,6 +3774,16 @@ def get_indicator_history(indicator_name: str, df: pd.DataFrame = None, days: in
         return get_hashrate_history(days)
     elif indicator_name == "BTC市占率":
         return get_dominance_history(days)
+    elif indicator_name == "MSTR mNAV" and df is not None:
+        return get_mnav_history(df, days)
+    elif indicator_name in ("ETF活跃度", "ETF资金流"):
+        return get_etf_history(days)
+    elif indicator_name.startswith("最大痛点") and df is not None:
+        return get_max_pain_history(df, days)
+    elif indicator_name == "公司持仓" and df is not None:
+        return get_company_holdings_history(df, days)
+    elif indicator_name == "长期持有者(CDD)":
+        return get_lth_cdd_history(days)
     else:
         return {"indicator": indicator_name, "dates": [], "values": [], "thresholds": {}}
 
@@ -3864,6 +4027,32 @@ def get_sparklines(df: pd.DataFrame, indicators: dict, days: int = 7) -> dict:
 
             elif name == "全网算力":
                 h = get_hashrate_history(days)
+                sparklines[name] = h.get("values", [])[-days:] or [indicators[name].score] * days
+
+            elif name == "MSTR mNAV":
+                h = get_mnav_history(days=days)
+                sparklines[name] = h.get("values", [])[-days:] or [indicators[name].score] * days
+
+            elif name in ("ETF活跃度", "ETF资金流"):
+                h = get_etf_history(days=days)
+                sparklines[name] = h.get("values", [])[-days:] or [indicators[name].score] * days
+
+            elif name.startswith("最大痛点"):
+                h = get_max_pain_history(df, days=days)
+                sparklines[name] = h.get("values", [])[-days:] or [indicators[name].score] * days
+
+            elif name == "公司持仓":
+                # 直接用已计算的持仓量，避免重复调用 CoinGecko API
+                holdings_val = indicators[name].value
+                if holdings_val and not np.isnan(holdings_val) and holdings_val > 0:
+                    btc_s = recent['price']
+                    sparklines[name] = [round(float(holdings_val) * float(p) / 1e9, 2) for p in btc_s.values]
+                else:
+                    h = get_company_holdings_history(df, days=days)
+                    sparklines[name] = h.get("values", [])[-days:] or [indicators[name].score] * days
+
+            elif name == "长期持有者(CDD)":
+                h = get_lth_cdd_history(days=days)
                 sparklines[name] = h.get("values", [])[-days:] or [indicators[name].score] * days
 
             else:

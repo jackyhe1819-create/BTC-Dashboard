@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" id="htmlRoot">
 
 <head>
     <meta charset="UTF-8">
@@ -16,7 +16,16 @@
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=19">
+    <!-- 防止主题闪烁：在 CSS 加载前立即恢复主题（v2: 默认米白色） -->
+    <script>
+        (function() {
+            var t = localStorage.getItem('btc-theme');
+            // 迁移：旧版默认 dark，现在默认 warm（米白色）
+            if (!t || t === 'dark') { t = 'warm'; localStorage.setItem('btc-theme', 'warm'); }
+            document.getElementById('htmlRoot').setAttribute('data-theme', t);
+        })();
+    </script>
     <!-- Chart.js for history drawer -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
@@ -76,20 +85,25 @@
                     <div id="tradingview_b1e2c" style="height: 100%; width: 100%;"></div>
                     <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
                     <script type="text/javascript">
-                        new TradingView.widget(
-                            {
+                        function initTradingViewWidget(theme) {
+                            const container = document.getElementById('tradingview_b1e2c');
+                            container.innerHTML = '';
+                            new TradingView.widget({
                                 "autosize": true,
                                 "symbol": "INDEX:BTCUSD",
                                 "interval": "D",
                                 "timezone": "Etc/UTC",
-                                "theme": "dark",
+                                "theme": theme || "dark",
                                 "style": "1",
                                 "locale": "zh_CN",
                                 "enable_publishing": false,
                                 "allow_symbol_change": true,
                                 "container_id": "tradingview_b1e2c"
-                            }
-                        );
+                            });
+                        }
+                        // 初始加载时读取已保存的主题
+                        const _initTheme = localStorage.getItem('btc-theme') === 'warm' ? 'light' : 'dark';
+                        initTradingViewWidget(_initTheme);
                     </script>
                 </div>
                 <!-- TradingView Widget END -->
@@ -176,6 +190,16 @@
                                 </div>
                             </div>
                         </details>
+
+                        <a href="https://asksurf.ai/chat/" target="_blank" rel="noopener noreferrer"
+                           style="display:flex; align-items:center; gap:8px; margin: 12px auto 4px; padding: 8px 16px;
+                                  background: rgba(247,147,34,0.12); border: 1px solid rgba(247,147,34,0.3);
+                                  border-radius: 10px; text-decoration: none; color: #f79322;
+                                  font-size: 0.82rem; font-weight: 500; width: fit-content;
+                                  transition: background 0.2s;">
+                            🤖 Crypto AI · AskSurf
+                            <span style="font-size:0.72rem; color:#888; font-weight:normal;">↗</span>
+                        </a>
                     </div>
 
                     <!-- Right: Summary Table -->
@@ -268,6 +292,14 @@
                                 <div class="ext-link-info">
                                     <span class="ext-link-name">BTC Bottom Dashboard</span>
                                     <span class="ext-link-desc">BTC 抄底综合看板</span>
+                                </div>
+                                <span class="ext-link-arrow">→</span>
+                            </a>
+                            <a href="https://claude.ai/public/artifacts/00cbe0a1-8ced-4e05-bf99-21ded25f0a57" target="_blank" class="ext-link-item">
+                                <span class="ext-link-icon">🤖</span>
+                                <div class="ext-link-info">
+                                    <span class="ext-link-name">比特币 vs 黄金周期定位仪</span>
+                                    <span class="ext-link-desc">BTC 与黄金周期对比分析</span>
                                 </div>
                                 <span class="ext-link-arrow">→</span>
                             </a>
@@ -394,15 +426,27 @@
             <!-- Right Column: BTC News Aggregation (Fixed 580px Height) -->
             <div class="news-col-right">
                 <div class="news-card news-main-card">
-                    <h3 style="color: #f79322; margin-bottom: 15px; font-size: 1.1rem; flex-shrink: 0;">
-                        📰 Block 资讯聚合
-                        <span style="font-size: 0.8rem; color: #888; font-weight: normal; margin-left: 10px;">
-                            律动 BlockBeats
-                        </span>
-                        <a href="https://www.theblockbeats.info/newsflash" target="_blank" rel="noopener noreferrer"
-                           style="font-size: 0.75rem; color: #f7931a; opacity: 0.7; margin-left: 10px; text-decoration: none; font-weight: normal;"
-                           title="在律动官网查看更多资讯">↗ 律动官网</a>
-                    </h3>
+                    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:15px; flex-shrink:0;">
+                        <h3 style="color: #f79322; font-size: 1.1rem; margin:0;">
+                            📡 Block 资讯聚合
+                            <span style="font-size: 0.8rem; color: #888; font-weight: normal; margin-left: 10px;">
+                                律动 BlockBeats
+                            </span>
+                            <a href="https://www.theblockbeats.info/newsflash" target="_blank" rel="noopener noreferrer"
+                               style="font-size: 0.75rem; color: #f7931a; opacity: 0.7; margin-left: 10px; text-decoration: none; font-weight: normal;"
+                               title="在律动官网查看更多资讯">↗ 律动官网</a>
+                            <a href="https://x.com/i/lists/1479657282585923588" target="_blank" rel="noopener noreferrer"
+                               style="font-size: 0.75rem; color: #1d9bf0; opacity: 0.8; margin-left: 8px; text-decoration: none; font-weight: normal;"
+                               title="查看 Twitter 加密资讯 List">𝕏 List</a>
+                            <a href="https://read.readwise.io/new" target="_blank" rel="noopener noreferrer"
+                               style="font-size: 0.75rem; color: #4a90d9; opacity: 0.8; margin-left: 8px; text-decoration: none; font-weight: normal;"
+                               title="Readwise 阅读器">📖 Readwise</a>
+                        </h3>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span id="newsUpdatedAt" style="font-size:0.72rem; color:#888;"></span>
+                            <button id="newsRefreshBtn" class="news-refresh-btn" title="手动刷新资讯">🔄</button>
+                        </div>
+                    </div>
                     <div id="cryptoNews" class="news-list" style="flex: 1; min-height: 0; overflow-y: auto; padding-right: 10px;">
                         <p style="color: #888;">加载中...</p>
                     </div>
@@ -443,6 +487,8 @@
 
     <!-- Refresh Button -->
     <button class="refresh-btn" id="refreshBtn" title="刷新数据">🔄</button>
+    <!-- Theme Toggle Button -->
+    <button class="theme-btn" id="themeBtn" title="切换暖色/暗色主题">🌙</button>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <!-- Global Tooltip Container (Nuclear Option to bypass clipping) -->
@@ -669,7 +715,7 @@
         <p style="margin: 6px 0 0 0; font-size: 0.75rem; color: #666;">点击地址即可复制</p>
     </div>
 
-    <script src="{{ url_for('static', filename='script.js') }}?v=11"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=17"></script>
 </body>
 
 </html>

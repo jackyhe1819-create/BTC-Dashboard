@@ -74,19 +74,38 @@ function applyTheme(theme) {
 // 页面加载时获取数据
 document.addEventListener('DOMContentLoaded', () => {
     // 恢复主题按钮图标
-    const savedTheme = localStorage.getItem('btc-theme') || 'dark';
+    const savedTheme = localStorage.getItem('btc-theme') || 'warm';
     applyTheme(savedTheme);
 
     // 主题切换点击
     document.getElementById('themeBtn')?.addEventListener('click', () => {
-        const current = localStorage.getItem('btc-theme') || 'dark';
+        const current = localStorage.getItem('btc-theme') || 'warm';
         applyTheme(current === 'warm' ? 'dark' : 'warm');
     });
+
+    // 资讯手动刷新
+    document.getElementById('newsRefreshBtn')?.addEventListener('click', () => {
+        fetchNewsData();
+    });
+
+    // 指标总览高度与"更多看板"对齐
+    function syncSummaryHeight() {
+        const ext = document.querySelector('.ext-links-container');
+        const summary = document.querySelector('.summary-table-container');
+        if (!ext || !summary) return;
+        const extH = ext.getBoundingClientRect().height;
+        if (extH > 0) {
+            summary.style.height = extH + 'px';
+        }
+    }
+    // 页面渲染后执行，并在窗口大小变化时重算
+    setTimeout(syncSummaryHeight, 100);
+    window.addEventListener('resize', syncSummaryHeight);
 
     renderSkeletons();
     fetchDashboardData();
     setInterval(fetchDashboardData, REFRESH_INTERVAL);
-    fetchBuildersData();
+    setTimeout(fetchBuildersData, 5000); // 延迟 5s，等待后台缓存预热
     setInterval(fetchBuildersData, 30 * 60 * 1000); // 每 30 分钟刷新
 });
 
@@ -913,16 +932,14 @@ function showError(message) {
  */
 async function fetchNewsData() {
     console.log('Fetching news data...');
+    const newsRefreshBtn = document.getElementById('newsRefreshBtn');
+    if (newsRefreshBtn) newsRefreshBtn.classList.add('spinning');
     try {
         const response = await fetch('/api/news');
         const data = await response.json();
 
         if (data.success) {
-            // 渲染资讯
-            if (data.news && data.news.length > 0) {
-                renderCryptoNews(data.news);
-            }
-            // 渲染鲸鱼动态
+            // 渲染鲸鱼动态（先渲染左栏，再渲染资讯）
             if (data.whales && data.whales.length > 0) {
                 renderWhaleActivity(data.whales);
             }
@@ -938,12 +955,24 @@ async function fetchNewsData() {
             if (data.calendar && data.calendar.length > 0) {
                 renderMacroCalendar(data.calendar);
             }
+            // 渲染资讯
+            if (data.news && data.news.length > 0) {
+                renderCryptoNews(data.news);
+            }
+            // 更新时间
+            const updatedEl = document.getElementById('newsUpdatedAt');
+            if (updatedEl) {
+                const now = new Date();
+                updatedEl.textContent = `更新于 ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+            }
             console.log('News data loaded successfully');
         } else {
             console.error('News API error:', data.error);
         }
     } catch (error) {
         console.error('Failed to fetch news:', error);
+    } finally {
+        if (newsRefreshBtn) newsRefreshBtn.classList.remove('spinning');
     }
 }
 
@@ -954,19 +983,47 @@ function renderCryptoNews(news) {
     const container = document.getElementById('cryptoNews');
     if (!container) return;
 
-    container.innerHTML = news.map(item => `
-        <div class="news-item" style="margin-bottom: 12px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px;">
-            <a href="${item.url}" target="_blank" style="color: #f79322; text-decoration: none; font-weight: 500;">
-                ${item.icon || '📰'} ${item.title}
-            </a>
-            <div style="margin-top: 6px; font-size: 0.85rem; color: #888;">
-                ${item.summary || ''}
+    const countBadge = `<div style="font-size:0.7rem; color:#555; padding:4px 4px 8px; border-bottom:1px solid rgba(255,255,255,0.06); margin-bottom:4px; flex-shrink:0;">
+        共 ${news.length} 条 · 最近 36 小时
+    </div>`;
+
+    const items = news.map(item => {
+        const summary = item.summary ? item.summary.trim() : '';
+        return `<div style="padding:9px 4px; border-bottom:1px solid rgba(255,255,255,0.05);">
+            <div style="display:flex; align-items:flex-start; gap:6px; margin-bottom:${summary ? '5px' : '0'};">
+                <span style="font-size:0.75rem; flex-shrink:0; margin-top:1px;">⚡</span>
+                <a href="${item.url}" target="_blank" rel="noopener noreferrer"
+                   style="flex:1; font-size:0.855rem; font-weight:500; color:#e0c97f; text-decoration:none; line-height:1.4;">
+                    ${item.title}
+                </a>
+                <span style="font-size:0.67rem; color:#555; white-space:nowrap; flex-shrink:0; margin-top:2px;">${item.time}</span>
             </div>
-            <div style="margin-top: 4px; font-size: 0.75rem; color: #666;">
-                ${item.source} · ${item.time}
-            </div>
-        </div>
-    `).join('');
+            ${summary ? `<div style="font-size:0.8rem; color:#888; line-height:1.55; padding-left:18px;">${summary}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    container.innerHTML = countBadge + items;
+
+    // 等 DOM 布局完成后，将右栏高度锁定为左栏高度
+    setTimeout(alignNewsColHeight, 200);
+}
+
+function alignNewsColHeight() {
+    var left = document.querySelector('.news-col-left');
+    var right = document.querySelector('.news-col-right');
+    if (!left || !right) return;
+    // 计算左栏所有子卡片的自然高度总和（含 gap）
+    var cards = left.children;
+    var totalH = 0;
+    for (var i = 0; i < cards.length; i++) {
+        totalH += cards[i].getBoundingClientRect().height;
+    }
+    // 加上卡片间的 gap（20px × (n-1)）
+    if (cards.length > 1) totalH += 20 * (cards.length - 1);
+    if (totalH > 100) {
+        right.style.height = totalH + 'px';
+        right.style.maxHeight = totalH + 'px';
+    }
 }
 
 /**
@@ -1123,20 +1180,20 @@ function renderWhaleActivity(whales) {
         const typeColor = getWhaleColor(item.type || '');
 
         return `
-        <a href="${item.url}" target="_blank" class="whale-item" style="display: block; text-decoration: none; margin-bottom: 8px; padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.9rem; transition: background 0.2s;">
+        <a href="${item.url}" target="_blank" class="whale-item" style="display: block; text-decoration: none; margin-bottom: 8px; padding: 8px; background: var(--bg-glass); border-radius: 6px; font-size: 0.9rem; transition: background 0.2s;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span style="color: ${typeColor}; display: flex; align-items: center; gap: 4px;">
                     ${item.icon || ''} ${item.type || '交易'}
                 </span>
-                <span style="color: #fff; font-weight: 500;">
+                <span style="color: var(--text-primary); font-weight: 500;">
                     ${item.amount}
                 </span>
             </div>
             <div style="display: flex; justify-content: space-between; margin-top: 4px;">
-                <span style="color: #666; font-size: 0.75rem;">
+                <span style="color: var(--text-muted); font-size: 0.75rem;">
                     ${item.time}
                 </span>
-                <span style="color: #888; font-size: 0.8rem;">
+                <span style="color: var(--text-secondary); font-size: 0.8rem;">
                     ≈ ${item.value_usd}
                 </span>
             </div>
@@ -1181,7 +1238,7 @@ function renderMacroCalendar(events) {
         // 状态徽章样式
         let statusBadge = '';
         if (eventStatus === '已公布') {
-            statusBadge = `<span style="font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; background: ${hasActual ? '#00c85322' : '#8884'}; color: ${hasActual ? '#00c853' : '#aaa'}; white-space: nowrap; margin-left: 6px; border: 1px solid ${hasActual ? '#00c85344' : '#8882'};">✓ 已公布</span>`;
+            statusBadge = `<span style="font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; background: ${hasActual ? '#00c85322' : 'rgba(128,128,128,0.15)'}; color: ${hasActual ? '#00c853' : 'var(--text-muted)'}; white-space: nowrap; margin-left: 6px; border: 1px solid ${hasActual ? '#00c85344' : 'rgba(128,128,128,0.2)'};">✓ 已公布</span>`;
         } else if (eventStatus === '待公布') {
             statusBadge = `<span style="font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; background: #f7932211; color: #f79322; white-space: nowrap; margin-left: 6px; border: 1px solid #f7932233;">⏳ 待公布</span>`;
         }
@@ -1193,30 +1250,30 @@ function renderMacroCalendar(events) {
             dataRows += `<div style="margin-top: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">`;
             dataRows += `<span style="font-size: 0.82rem; color: #00e676; font-weight: 600; background: #00e67615; padding: 1px 6px; border-radius: 4px;">📌 公布: ${actual}</span>`;
             if (forecast) {
-                dataRows += `<span style="font-size: 0.75rem; color: #aaa;">预期: ${forecast}</span>`;
+                dataRows += `<span style="font-size: 0.75rem; color: var(--text-secondary);">预期: ${forecast}</span>`;
             }
             if (previous) {
-                dataRows += `<span style="font-size: 0.75rem; color: #888;">前值: ${previous}</span>`;
+                dataRows += `<span style="font-size: 0.75rem; color: var(--text-muted);">前值: ${previous}</span>`;
             }
             dataRows += `</div>`;
         } else if (isPast) {
             // 已过去但没有actual - 显示预期和前值
             dataRows += `<div style="margin-top: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">`;
             if (forecast) {
-                dataRows += `<span style="font-size: 0.75rem; color: #ccc;">预期: ${forecast}</span>`;
+                dataRows += `<span style="font-size: 0.75rem; color: var(--text-secondary);">预期: ${forecast}</span>`;
             }
             if (previous) {
-                dataRows += `<span style="font-size: 0.75rem; color: #888;">前值: ${previous}</span>`;
+                dataRows += `<span style="font-size: 0.75rem; color: var(--text-muted);">前值: ${previous}</span>`;
             }
             dataRows += `</div>`;
         } else {
             // 未来事件 - 显示预期和前值
             dataRows += `<div style="margin-top: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">`;
             if (forecast) {
-                dataRows += `<span style="font-size: 0.75rem; color: #ccc;">预期: ${forecast}</span>`;
+                dataRows += `<span style="font-size: 0.75rem; color: var(--text-secondary);">预期: ${forecast}</span>`;
             }
             if (previous) {
-                dataRows += `<span style="font-size: 0.75rem; color: #888;">前值: ${previous}</span>`;
+                dataRows += `<span style="font-size: 0.75rem; color: var(--text-muted);">前值: ${previous}</span>`;
             }
             dataRows += `</div>`;
         }
@@ -1225,9 +1282,9 @@ function renderMacroCalendar(events) {
         const opacity = isPast && !hasActual ? '0.75' : '1';
 
         return `
-        <div class="calendar-item" style="margin-bottom: 8px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px; border-left: 3px solid ${color}; opacity: ${opacity};">
+        <div class="calendar-item" style="margin-bottom: 8px; padding: 10px; background: var(--bg-glass); border-radius: 8px; border-left: 3px solid ${color}; opacity: ${opacity};">
             <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <div style="color: #e0e0e0; font-weight: 500; font-size: 0.9rem; flex: 1; display: flex; align-items: center; flex-wrap: wrap;">
+                <div style="color: var(--text-primary); font-weight: 500; font-size: 0.9rem; flex: 1; display: flex; align-items: center; flex-wrap: wrap;">
                     ${item.event || item.title || '未知事件'}
                     ${statusBadge}
                 </div>
@@ -1236,7 +1293,7 @@ function renderMacroCalendar(events) {
                 </span>
             </div>
             <div style="margin-top: 4px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 0.8rem; color: #888;">
+                <span style="font-size: 0.8rem; color: var(--text-secondary);">
                     📆 ${item.date || ''}
                 </span>
             </div>
