@@ -162,15 +162,12 @@ async function fetchBuildersData() {
 }
 
 /**
- * 获取仪表盘数据
+ * 获取仪表盘数据（支持冷启动轮询）
+ * 服务器返回 computing:true (202) 时，每 8 秒自动重试，最多等待 10 分钟
  */
-async function fetchDashboardData() {
+async function fetchDashboardData(isRetry) {
     const refreshBtn = document.getElementById('refreshBtn');
-
-    // 显示加载状态
-    if (refreshBtn) {
-        refreshBtn.classList.add('spinning');
-    }
+    if (!isRetry && refreshBtn) refreshBtn.classList.add('spinning');
 
     try {
         const response = await fetch('/api/dashboard');
@@ -178,17 +175,67 @@ async function fetchDashboardData() {
 
         if (data.success) {
             renderDashboard(data);
-        } else {
-            showError(data.error || '获取数据失败');
+            if (refreshBtn) refreshBtn.classList.remove('spinning');
+            return;
         }
+
+        // 服务器正在计算（冷启动），显示提示并轮询
+        if (data.computing) {
+            _showComputingBanner();
+            if (!window._dashboardPollTimer) {
+                let attempts = 0;
+                window._dashboardPollTimer = setInterval(async () => {
+                    attempts++;
+                    if (attempts > 75) { // 最多等 10 分钟 (75 × 8s)
+                        clearInterval(window._dashboardPollTimer);
+                        window._dashboardPollTimer = null;
+                        _hideComputingBanner();
+                        showError('指标加载超时，请手动刷新页面');
+                        if (refreshBtn) refreshBtn.classList.remove('spinning');
+                        return;
+                    }
+                    try {
+                        const r2 = await fetch('/api/dashboard');
+                        const d2 = await r2.json();
+                        if (d2.success) {
+                            clearInterval(window._dashboardPollTimer);
+                            window._dashboardPollTimer = null;
+                            _hideComputingBanner();
+                            renderDashboard(d2);
+                            if (refreshBtn) refreshBtn.classList.remove('spinning');
+                        }
+                    } catch(e) { /* 静默忽略轮询错误 */ }
+                }, 8000);
+            }
+            return;
+        }
+
+        showError(data.error || '获取数据失败');
     } catch (error) {
         console.error('Error fetching dashboard data:', error);
         showError('无法连接到服务器');
     } finally {
-        if (refreshBtn) {
+        // 非 computing 情况下才立即停止 spinner
+        if (!window._dashboardPollTimer && refreshBtn) {
             refreshBtn.classList.remove('spinning');
         }
     }
+}
+
+function _showComputingBanner() {
+    let banner = document.getElementById('computingBanner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'computingBanner';
+        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:rgba(247,147,26,0.92);color:#fff;text-align:center;padding:10px;font-size:0.9rem;font-weight:500;';
+        banner.innerHTML = '⏳ 指标首次加载中（冷启动约需 2–4 分钟），请稍候，页面将自动更新…';
+        document.body.prepend(banner);
+    }
+}
+
+function _hideComputingBanner() {
+    const banner = document.getElementById('computingBanner');
+    if (banner) banner.remove();
 }
 
 /**

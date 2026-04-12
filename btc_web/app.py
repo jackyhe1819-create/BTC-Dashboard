@@ -44,6 +44,12 @@ _news_cache_timestamp = None
 _news_refreshing = False          # 防止并发重复刷新
 _NEWS_TTL = 900                   # 15 分钟
 
+# ── 开发者动态缓存（stale-while-revalidate，30 分钟 TTL）────────────
+_builders_cache = None
+_builders_cache_timestamp = None
+_builders_refreshing = False
+_BUILDERS_TTL = 1800              # 30 分钟
+
 
 def _do_refresh_dashboard():
     """在后台线程中刷新仪表盘缓存。"""
@@ -137,6 +143,31 @@ def trigger_news_refresh():
         t.start()
 
 
+def _do_refresh_builders():
+    """在后台线程中刷新开发者动态缓存。"""
+    global _builders_cache, _builders_cache_timestamp, _builders_refreshing
+    try:
+        data = fetch_builders_feed(limit=30)
+        _builders_cache = data
+        _builders_cache_timestamp = datetime.now()
+        print(f"✅ 开发者动态缓存刷新完成 {_builders_cache_timestamp.strftime('%H:%M:%S')}")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"⚠️ 开发者动态缓存刷新失败: {e}")
+    finally:
+        _builders_refreshing = False
+
+
+def trigger_builders_refresh():
+    """触发后台刷新开发者动态（若未在刷新中）。"""
+    global _builders_refreshing
+    if not _builders_refreshing:
+        _builders_refreshing = True
+        t = threading.Thread(target=_do_refresh_builders, daemon=True)
+        t.start()
+
+
 def get_cached_btc_data():
     """获取缓存的 BTC 数据"""
     global _btc_data_cache, _btc_data_timestamp
@@ -156,6 +187,8 @@ def _delayed_warmup():
     _t.sleep(5)
     trigger_dashboard_refresh()
     trigger_news_refresh()
+    _t.sleep(15)
+    trigger_builders_refresh()
 
 threading.Thread(target=_delayed_warmup, daemon=True).start()
 
@@ -170,9 +203,10 @@ def index():
 def api_dashboard():
     """
     API 端点：返回仪表盘数据
-    策略：stale-while-revalidate
+    策略：非阻塞 stale-while-revalidate
       - 有缓存 → 立即返回，若已过期则同时触发后台刷新
-      - 无缓存 → 等待首次刷新完成（仅冷启动，最多 90 秒）
+      - 无缓存 → 立即返回 computing=True，前端轮询直到就绪
+        （避免 Render 等平台 30s 请求超时导致 504）
     """
     global _dashboard_cache, _dashboard_cache_timestamp
 
@@ -190,19 +224,13 @@ def api_dashboard():
             **_dashboard_cache
         })
 
-    # 无缓存（冷启动）：触发刷新并轮询最多 90 秒
+    # 无缓存（冷启动）：立即返回 computing 状态，前端负责轮询
     trigger_dashboard_refresh()
-    import time
-    for _ in range(180):
-        time.sleep(0.5)
-        if _dashboard_cache is not None:
-            return jsonify({
-                "success": True,
-                "cached": False,
-                "cache_age_s": 0,
-                **_dashboard_cache
-            })
-    return jsonify({"success": False, "error": "指标加载超时，请稍后刷新"}), 504
+    return jsonify({
+        "success": False,
+        "computing": True,
+        "error": "指标计算中，请稍候…"
+    }), 202
 
 
 @app.route('/api/history/<indicator_name>')
@@ -272,14 +300,41 @@ def api_news():
 
 @app.route('/api/builders')
 def api_builders():
-    """API 端点：返回 Bitcoin 开发者社区动态"""
-    try:
-        data = fetch_builders_feed(limit=30)
-        return jsonify({"success": True, **data})
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
+    """
+    API 端点：返回 Bitcoin 开发者社区动态
+    策略：stale-while-revalidate
+      - 有缓存 → 立即返回，若已过期则同时触发后台刷新
+      - 无缓存 → 同步等待首次刷新完成（仅冷启动时）
+    """
+    global _builders_cache, _builders_cache_timestamp
+
+    now = datetime.now()
+    cache_age = (now - _builders_cache_timestamp).seconds if _builders_cache_timestamp else None
+    has_cache = _builders_cache is not None
+
+    if has_cache:
+        if cache_age is not None and cache_age >= _BUILDERS_TTL:
+            trigger_builders_refresh()
+        return jsonify({
+            "success": True,
+            "cached": True,
+            "cache_age_s": cache_age,
+            **_builders_cache
+        })
+
+    # 无缓存（冷启动）：触发刷新并轮询最多 60 秒
+    trigger_builders_refresh()
+    import time
+    for _ in range(120):
+        time.sleep(0.5)
+        if _builders_cache is not None:
+            return jsonify({
+                "success": True,
+                "cached": False,
+                "cache_age_s": 0,
+                **_builders_cache
+            })
+    return jsonify({"success": False, "error": "开发者动态加载超时，请稍后刷新"}), 504
 
 
 if __name__ == '__main__':
