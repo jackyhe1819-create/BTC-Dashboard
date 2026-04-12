@@ -2159,7 +2159,7 @@ def fetch_crypto_news(limit: int = 20) -> list:
     - 自动翻页直到覆盖 36 小时，最多 15 页（~300 条）
     """
     import re
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     def clean_html(text: str) -> str:
         clean = re.sub(r'<[^>]+>', '', text or '')
